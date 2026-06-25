@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { config, isDev } from "../config.js";
+import { logger } from "./logger.js";
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -18,7 +19,7 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
         pass: testAccount.pass,
       },
     });
-    console.log("📧 Using Ethereal test email account:", testAccount.user);
+    logger.info(`📧 Using Ethereal test email account: ${testAccount.user}`);
     return transporter;
   }
 
@@ -54,7 +55,7 @@ export async function sendMail(options: SendMailOptions): Promise<void> {
   if (isDev) {
     const previewUrl = nodemailer.getTestMessageUrl(info);
     if (previewUrl) {
-      console.log("📧 Preview email:", previewUrl);
+      logger.info(`📧 Preview email: ${previewUrl}`);
     }
   }
 }

@@ -149,6 +149,32 @@ export const authApi = {
       method: "POST",
       body: { token, password },
     }),
+
+  removePermission: (roleId: string, permission: string) =>
+    request<{ message: string }>(`/roles/${roleId}/permissions`, { method: "DELETE", body: { permission } }),
+};
+
+// ── Calendar API ─────────────────────────────────────────
+
+export interface ApiCalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  startDate: string;
+  endDate: string;
+  type: string;
+  academicYearId: string;
+}
+
+export const calendarApi = {
+  getEvents: (academicYearId?: string) =>
+    request<{ events: ApiCalendarEvent[] }>(academicYearId ? `/calendar?academicYearId=${academicYearId}` : "/calendar"),
+  createEvent: (data: { title: string; description?: string | null; startDate: string; endDate: string; type: string; academicYearId: string }) =>
+    request<{ event: ApiCalendarEvent }>("/calendar", { method: "POST", body: data }),
+  updateEvent: (id: string, data: Partial<{ title: string; description: string | null; startDate: string; endDate: string; type: string }>) =>
+    request<{ event: ApiCalendarEvent }>(`/calendar/${id}`, { method: "PATCH", body: data }),
+  deleteEvent: (id: string) =>
+    request<{ message: string }>(`/calendar/${id}`, { method: "DELETE" }),
 };
 
 // ── Users API ────────────────────────────────────────────
@@ -177,6 +203,176 @@ export const rolesApi = {
     request<{ message: string }>(`/roles/${id}`, { method: "DELETE" }),
 };
 
+// ── Academic API ─────────────────────────────────────────
+
+export interface ApiTerm {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  active: boolean;
+}
+
+export interface ApiAcademicYear {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  active: boolean;
+  terms: ApiTerm[];
+}
+
+export interface ApiClassRoom {
+  id: string;
+  name: string;
+  level: number;
+  capacity: number;
+  teacherId: string | null;
+  teacherName: string;
+  studentCount: number;
+}
+
+export interface ApiSubject {
+  id: string;
+  name: string;
+  code: string;
+  teachers: { id: string; name: string }[];
+}
+
+export const academicApi = {
+  getYears: () => request<{ years: ApiAcademicYear[] }>("/academic/years"),
+  getTeachers: () => request<{ teachers: { id: string; name: string; email: string; staffNo: string }[] }>("/academic/teachers"),
+  createYear: (data: { name: string; startDate: string; endDate: string; active?: boolean; terms: Omit<ApiTerm, "id" | "active">[] }) =>
+    request<{ year: ApiAcademicYear }>("/academic/years", { method: "POST", body: data }),
+  updateYear: (id: string, data: { name?: string; startDate?: string; endDate?: string; active?: boolean }) =>
+    request<{ year: ApiAcademicYear }>(`/academic/years/${id}`, { method: "PATCH", body: data }),
+  deleteYear: (id: string) =>
+    request<{ message: string }>(`/academic/years/${id}`, { method: "DELETE" }),
+  updateTerm: (id: string, data: { name?: string; startDate?: string; endDate?: string; active?: boolean }) =>
+    request<{ term: ApiTerm }>(`/academic/terms/${id}`, { method: "PATCH", body: data }),
+
+  getClasses: () => request<{ classrooms: ApiClassRoom[] }>("/academic/classes"),
+  createClass: (data: { name: string; level: number; capacity: number; teacherId?: string | null }) =>
+    request<{ classroom: ApiClassRoom }>("/academic/classes", { method: "POST", body: data }),
+  updateClass: (id: string, data: { name?: string; level?: number; capacity?: number; teacherId?: string | null }) =>
+    request<{ classroom: ApiClassRoom }>(`/academic/classes/${id}`, { method: "PATCH", body: data }),
+  deleteClass: (id: string) =>
+    request<{ message: string }>(`/academic/classes/${id}`, { method: "DELETE" }),
+  getClassroomSubjects: (classId: string) =>
+    request<{ classSubjects: { id: string; subjectId: string; subjectName: string; subjectCode: string; teacherId: string | null; teacherName: string; passMark: number; weight: number }[] }>(`/academic/classes/${classId}/subjects`),
+  saveClassroomSubjects: (classId: string, data: { subjects: { subjectId: string; teacherId?: string | null; passMark: number; weight: number }[] }) =>
+    request<{ message: string }>(`/academic/classes/${classId}/subjects`, { method: "POST", body: data }),
+
+  getSubjects: () => request<{ subjects: ApiSubject[] }>("/academic/subjects"),
+  createSubject: (data: { name: string; code: string; teacherIds?: string[] }) =>
+    request<{ subject: ApiSubject }>("/academic/subjects", { method: "POST", body: data }),
+  updateSubject: (id: string, data: { name?: string; code?: string; teacherIds?: string[] }) =>
+    request<{ subject: ApiSubject }>(`/academic/subjects/${id}`, { method: "PATCH", body: data }),
+  deleteSubject: (id: string) =>
+    request<{ message: string }>(`/academic/subjects/${id}`, { method: "DELETE" }),
+
+  getAttendance: (classId: string, date: string) =>
+    request<{ attendance: { id: string | null; firstName: string; lastName: string; admissionNo: string; photoColor: string; status: string }[] }>(
+      `/academic/attendance?classId=${classId}&date=${date}`
+    ),
+  getAttendanceDates: (classId: string) =>
+    request<{ dates: string[] }>(`/academic/attendance/dates?classId=${classId}`),
+  saveAttendance: (data: { classId: string; date: string; marks: { studentId: string; status: string }[] }) =>
+    request<{ message: string }>("/academic/attendance", { method: "POST", body: data }),
+
+  getClassSubjects: () =>
+    request<{ classSubjects: { id: string; classId: string; className: string; subjectName: string; subjectCode: string; teacherId: string | null; teacherName: string; passMark: number; weight: number }[] }>("/academic/class-subjects"),
+  getGradebook: (classSubjectId: string) =>
+    request<{ classSubject: any; records: any[] }>(`/academic/gradebook?classSubjectId=${classSubjectId}`),
+  saveGradebook: (data: { classSubjectId: string; entries: { studentId: string; classScore: number; examScore: number }[] }) =>
+    request<{ message: string }>("/academic/gradebook", { method: "POST", body: data }),
+
+  getClassReports: (classId: string) =>
+    request<{ reports: { studentId: string; firstName: string; lastName: string; admissionNo: string; photoColor: string; averageScore: number; teacherRemarks: string | null; principalRemark: string | null; published: boolean }[] }>(`/academic/reports?classId=${classId}`),
+  getStudentReport: (studentId: string) =>
+    request<{ student: any; attendance: any; subjects: any[]; reportSummary: any }>(`/academic/reports/student/${studentId}`),
+  saveRemarks: (data: { studentId: string; teacherRemarks?: string; principalRemark?: string; published?: boolean }) =>
+    request<{ message: string }>("/academic/reports/remarks", { method: "POST", body: data }),
+
+  getPromotions: (classId: string) =>
+    request<{ promotions: { studentId: string; firstName: string; lastName: string; admissionNo: string; photoColor: string; status: string; enrolmentId: string; recommendation: string; promotionStatus: string; remarks: string }[] }>(`/academic/promotions?classId=${classId}`),
+  saveRecommendations: (data: { classId: string; recommendations: { studentId: string; recommendation: string; remarks?: string }[] }) =>
+    request<{ message: string }>("/academic/promotions/recommend", { method: "POST", body: data }),
+  approvePromotions: (data: { classId: string; targetClassId: string }) =>
+    request<{ message: string }>("/academic/promotions/approve", { method: "POST", body: data }),
+};
+
+// ── Students API ─────────────────────────────────────────
+
+export interface ApiStudent {
+  id: string;
+  admissionNo: string;
+  firstName: string;
+  lastName: string;
+  gender: string;
+  dob: string;
+  status: string;
+  enrolledAt: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianRelation: string;
+  guardianEmail: string | null;
+  guardian: {
+    name: string;
+    phone: string;
+    relation: string;
+    email: string | null;
+  };
+  address: string;
+  photoColor: string;
+  classId: string | null;
+  className: string;
+}
+
+export const studentsApi = {
+  list: (params?: { classId?: string; status?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.classId) query.set("classId", params.classId);
+    if (params?.status) query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    const qStr = query.toString();
+    return request<{ students: ApiStudent[] }>(`/students${qStr ? `?${qStr}` : ""}`);
+  },
+  get: (id: string) => request<{ student: ApiStudent }>(`/students/${id}`),
+  create: (data: {
+    firstName: string;
+    lastName: string;
+    gender: string;
+    dob: string;
+    guardianName: string;
+    guardianPhone: string;
+    guardianRelation: string;
+    guardianEmail?: string | null;
+    address: string;
+    classId: string;
+  }) => request<{ student: ApiStudent }>("/students", { method: "POST", body: data }),
+  update: (
+    id: string,
+    data: {
+      firstName?: string;
+      lastName?: string;
+      gender?: string;
+      dob?: string;
+      status?: string;
+      guardianName?: string;
+      guardianPhone?: string;
+      guardianRelation?: string;
+      guardianEmail?: string | null;
+      address?: string;
+      classId?: string;
+    }
+  ) => request<{ student: ApiStudent }>(`/students/${id}`, { method: "PATCH", body: data }),
+  getAttendance: (id: string, yearId: string, termId: string) =>
+    request<{ attendance: { id: string; date: string; status: string; className: string }[] }>(
+      `/students/${id}/attendance?academicYearId=${yearId}&termId=${termId}`
+    ),
+};
+
 // ── API Types ────────────────────────────────────────────
 
 export interface ApiUser {
@@ -189,6 +385,7 @@ export interface ApiUser {
   roleSlug: string;
   roleName: string;
   permissions: string[];
+  assignedClassId?: string | null;
   active?: boolean;
   createdAt?: string;
   updatedAt?: string;

@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Users, GraduationCap, CalendarDays, ClipboardCheck,
   Wallet, Receipt, AlertTriangle, ArrowUpCircle, BarChart3, ShieldCheck,
   Building2, HeartHandshake, BookOpenCheck, Boxes, Settings, ChevronRight,
+  LayoutGrid,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -17,10 +18,13 @@ const groups: NavGroup[] = [
     { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, perm: "dashboard.view" },
   ]},
   { label: "School", items: [
+    { label: "Classes", to: "/classes", icon: LayoutGrid, perm: "academic.view" },
     { label: "Students", to: "/students", icon: GraduationCap, perm: "students.view" },
     { label: "Staff", to: "/staff", icon: Users, perm: "staff.view" },
     { label: "Academic Setup", to: "/academic", icon: BookOpenCheck, perm: "academic.view" },
+    { label: "Calendar", to: "/calendar", icon: CalendarDays, perm: "academic.view" },
     { label: "Attendance", to: "/attendance", icon: ClipboardCheck, perm: "attendance.view" },
+    { label: "Gradebook", to: "/gradebook", icon: BookOpenCheck, perm: "students.view" },
     { label: "Promotions", to: "/promotions", icon: ArrowUpCircle, perm: "promotion.view" },
   ]},
   { label: "Finance", items: [

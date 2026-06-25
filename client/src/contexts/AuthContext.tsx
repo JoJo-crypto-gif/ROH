@@ -43,6 +43,7 @@ function apiUserToAuthUser(apiUser: ApiUser): AuthUser {
     roleName: apiUser.roleName,
     permissions: apiUser.permissions as Permission[],
     scopes,
+    assignedClassId: apiUser.assignedClassId || undefined,
   };
 }
 

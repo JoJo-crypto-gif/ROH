@@ -15,11 +15,19 @@ model User {
   avatarUrl    String?  @map("avatar_url")
   active       Boolean  @default(true)
 
+  staffNo      String?  @unique @map("staff_no")
+  phone        String?
+  joinedAt     DateTime? @default(now()) @map("joined_at")
+
   roleId String @map("role_id")
   role   Role   @relation(fields: [roleId], references: [id])
 
-  refreshTokens      RefreshToken[]
+  refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+
+  classroomsTeached  ClassRoom[]    @relation("ClassTeacher")
+  classSubjects      ClassSubject[] @relation("SubjectTeacherRelation")
+  subjectAssignments SubjectTeacher[] @relation("UserSubjectTeacher")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt       @map("updated_at")
@@ -76,4 +84,215 @@ model PasswordResetToken {
 
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+model AcademicYear {
+  id         String             @id @default(cuid())
+  name       String             @unique // e.g. "2026 / 2027"
+  startDate  DateTime           @default(now()) @map("start_date")
+  endDate    DateTime           @default(now()) @map("end_date")
+  active         Boolean            @default(false)
+  terms          Term[]
+  calendarEvents CalendarEvent[]
+  enrolments     StudentEnrolment[]
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt       @map("updated_at")
+
+  @@map("academic_years")
+}
+
+model Term {
+  id             String       @id @default(cuid())
+  name           String       // e.g. "Term 1"
+  startDate      DateTime     @map("start_date")
+  endDate        DateTime     @map("end_date")
+  academicYearId String       @map("academic_year_id")
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  active         Boolean      @default(false)
+  attendance     Attendance[]
+  grades         GradeBook[]
+  reports        TermReport[]
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt       @map("updated_at")
+
+  @@map("terms")
+}
+
+model ClassRoom {
+  id         String             @id @default(cuid())
+  name       String             @unique // e.g. "Primary 1"
+  level      Int
+  capacity   Int
+  teacherId  String?            @map("teacher_id")
+  teacher    User?              @relation("ClassTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  enrolments StudentEnrolment[]
+  subjects   ClassSubject[]
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt       @map("updated_at")
+
+  @@map("classrooms")
+}
+
+model Subject {
+  id        String         @id @default(cuid())
+  name      String         @unique // e.g. "Mathematics"
+  code      String         @unique // e.g. "MTH"
+  classes   ClassSubject[]
+  teachers  SubjectTeacher[]
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt       @map("updated_at")
+
+  @@map("subjects")
+}
+
+model ClassSubject {
+  id         String      @id @default(cuid())
+  classId    String      @map("class_id")
+  subjectId  String      @map("subject_id")
+  teacherId  String?     @map("teacher_id")
+  teacher    User?       @relation("SubjectTeacherRelation", fields: [teacherId], references: [id], onDelete: SetNull)
+  passMark   Int         @default(50) @map("pass_mark")
+  weight     Int         @default(1)
+  classRoom  ClassRoom   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject    Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  grades     GradeBook[]
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt       @map("updated_at")
+
+  @@unique([classId, subjectId])
+  @@map("class_subjects")
+}
+
+model StudentEnrolment {
+  id             String          @id @default(cuid())
+  studentId      String          @map("student_id")
+  classId        String          @map("class_id")
+  academicYearId String          @map("academic_year_id")
+  student        Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classRoom      ClassRoom       @relation(fields: [classId], references: [id], onDelete: Restrict)
+  academicYear   AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  promotions     Promotion[]     @relation("CurrentEnrolment")
+  newPromotions  Promotion[]     @relation("NextEnrolment")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt       @map("updated_at")
+
+  @@unique([studentId, academicYearId])
+  @@map("student_enrolments")
+}
+
+model Student {
+  id               String             @id @default(cuid())
+  admissionNo      String             @unique @map("admission_no")
+  firstName        String             @map("first_name")
+  lastName         String             @map("last_name")
+  gender           String
+  dob              DateTime
+  status           String             @default("active") // active, withdrawn, graduated, repeating
+  enrolledAt       DateTime           @default(now()) @map("enrolled_at")
+  guardianName     String             @map("guardian_name")
+  guardianPhone    String             @map("guardian_phone")
+  guardianRelation String             @map("guardian_relation")
+  guardianEmail    String?            @map("guardian_email")
+  address          String
+  photoColor       String             @map("photo_color")
+  enrolments       StudentEnrolment[]
+  attendance       Attendance[]
+  reports          TermReport[]
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt       @map("updated_at")
+
+  @@map("students")
+}
+
+model Attendance {
+  id        String   @id @default(cuid())
+  studentId String   @map("student_id")
+  termId    String   @map("term_id")
+  date      DateTime
+  status    String   // PRESENT, ABSENT, LATE, EXCUSED
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term      Term     @relation(fields: [termId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt       @map("updated_at")
+
+  @@unique([studentId, date, termId])
+  @@map("attendance")
+}
+
+model SubjectTeacher {
+  subjectId String  @map("subject_id")
+  teacherId String  @map("teacher_id")
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher   User    @relation("UserSubjectTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([subjectId, teacherId])
+  @@map("subject_teachers")
+}
+
+model GradeBook {
+  id             String       @id @default(cuid())
+  studentId      String       @map("student_id")
+  classSubjectId String       @map("class_subject_id")
+  termId         String       @map("term_id")
+  classScore     Float        @default(0) @map("class_score") // CA (Continuous Assessment e.g. 40%)
+  examScore      Float        @default(0) @map("exam_score")  // Final Exam (e.g. 60%)
+  totalScore     Float        @default(0) @map("total_score") // classScore + examScore
+  grade          String?
+  remarks        String?
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  term           Term         @relation(fields: [termId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt       @map("updated_at")
+
+  @@unique([studentId, classSubjectId, termId])
+  @@map("gradebooks")
+}
+
+model TermReport {
+  id              String   @id @default(cuid())
+  studentId       String   @map("student_id")
+  termId          String   @map("term_id")
+  teacherRemarks  String?  @map("teacher_remarks")
+  principalRemark String?  @map("principal_remark")
+  published       Boolean  @default(false)
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term            Term     @relation(fields: [termId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt       @map("updated_at")
+
+  @@unique([studentId, termId])
+  @@map("term_reports")
+}
+
+model CalendarEvent {
+  id             String       @id @default(cuid())
+  title          String
+  description    String?
+  startDate      DateTime     @map("start_date")
+  endDate        DateTime     @map("end_date")
+  type           String       @default("EVENT") // "HOLIDAY", "EXAM", "ACTIVITY", "EVENT"
+  academicYearId String       @map("academic_year_id")
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt       @map("updated_at")
+
+  @@map("calendar_events")
+}
+
+model Promotion {
+  id                 String           @id @default(cuid())
+  studentEnrolmentId String           @map("student_enrolment_id")
+  currentEnrolment   StudentEnrolment @relation("CurrentEnrolment", fields: [studentEnrolmentId], references: [id], onDelete: Cascade)
+  nextEnrolmentId    String?          @map("next_enrolment_id")
+  nextEnrolment      StudentEnrolment? @relation("NextEnrolment", fields: [nextEnrolmentId], references: [id], onDelete: SetNull)
+  recommendation     String           // PROMOTE / REPEAT
+  status             String           @default("PENDING") // PENDING, APPROVED, REJECTED
+  remarks            String?
+  recommendedById    String           @map("recommended_by_id")
+  approvedById       String?          @map("approved_by_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt       @map("updated_at")
+
+  @@map("promotions")
 }

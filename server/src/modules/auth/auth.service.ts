@@ -34,9 +34,11 @@ interface UserWithRole {
     name: string;
     permissions: { permission: string }[];
   };
+  classroomsTeached?: { id: string }[];
 }
 
 function formatUser(user: UserWithRole) {
+  const assignedClass = user.classroomsTeached?.[0];
   return {
     id: user.id,
     email: user.email,
@@ -47,6 +49,7 @@ function formatUser(user: UserWithRole) {
     roleSlug: user.role.slug,
     roleName: user.role.name,
     permissions: user.role.permissions.map((p) => p.permission),
+    assignedClassId: assignedClass?.id || null,
   };
 }
 
@@ -57,6 +60,9 @@ export async function signIn(email: string, password: string) {
     where: { email: email.toLowerCase() },
     include: {
       role: { include: { permissions: true } },
+      classroomsTeached: {
+        select: { id: true }
+      }
     },
   });
 
@@ -136,7 +142,12 @@ export async function refreshAccessToken(refreshToken: string) {
   // Fetch user
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    include: { role: { include: { permissions: true } } },
+    include: {
+      role: { include: { permissions: true } },
+      classroomsTeached: {
+        select: { id: true }
+      }
+    },
   });
 
   if (!user || !user.active) {
@@ -206,7 +217,12 @@ export async function logout(refreshToken: string) {
 export async function getMe(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { role: { include: { permissions: true } } },
+    include: {
+      role: { include: { permissions: true } },
+      classroomsTeached: {
+        select: { id: true }
+      }
+    },
   });
 
   if (!user || !user.active) {

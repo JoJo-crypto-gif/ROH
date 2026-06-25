@@ -23,9 +23,12 @@ import { Route as AppPromotionsRouteImport } from './routes/_app/promotions'
 import { Route as AppPaymentsRouteImport } from './routes/_app/payments'
 import { Route as AppNgoRouteImport } from './routes/_app/ngo'
 import { Route as AppInventoryRouteImport } from './routes/_app/inventory'
+import { Route as AppGradebookRouteImport } from './routes/_app/gradebook'
 import { Route as AppFeesRouteImport } from './routes/_app/fees'
 import { Route as AppDebtorsRouteImport } from './routes/_app/debtors'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppClassesRouteImport } from './routes/_app/classes'
+import { Route as AppCalendarRouteImport } from './routes/_app/calendar'
 import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
 import { Route as AppAccountingRouteImport } from './routes/_app/accounting'
 import { Route as AppAcademicRouteImport } from './routes/_app/academic'
@@ -101,6 +104,11 @@ const AppInventoryRoute = AppInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AppRoute,
 } as any)
+const AppGradebookRoute = AppGradebookRouteImport.update({
+  id: '/gradebook',
+  path: '/gradebook',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFeesRoute = AppFeesRouteImport.update({
   id: '/fees',
   path: '/fees',
@@ -114,6 +122,16 @@ const AppDebtorsRoute = AppDebtorsRouteImport.update({
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppClassesRoute = AppClassesRouteImport.update({
+  id: '/classes',
+  path: '/classes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCalendarRoute = AppCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAttendanceRoute = AppAttendanceRouteImport.update({
@@ -149,9 +167,12 @@ export interface FileRoutesByFullPath {
   '/academic': typeof AppAcademicRoute
   '/accounting': typeof AppAccountingRoute
   '/attendance': typeof AppAttendanceRoute
+  '/calendar': typeof AppCalendarRoute
+  '/classes': typeof AppClassesRoute
   '/dashboard': typeof AppDashboardRoute
   '/debtors': typeof AppDebtorsRoute
   '/fees': typeof AppFeesRoute
+  '/gradebook': typeof AppGradebookRoute
   '/inventory': typeof AppInventoryRoute
   '/ngo': typeof AppNgoRoute
   '/payments': typeof AppPaymentsRoute
@@ -172,9 +193,12 @@ export interface FileRoutesByTo {
   '/academic': typeof AppAcademicRoute
   '/accounting': typeof AppAccountingRoute
   '/attendance': typeof AppAttendanceRoute
+  '/calendar': typeof AppCalendarRoute
+  '/classes': typeof AppClassesRoute
   '/dashboard': typeof AppDashboardRoute
   '/debtors': typeof AppDebtorsRoute
   '/fees': typeof AppFeesRoute
+  '/gradebook': typeof AppGradebookRoute
   '/inventory': typeof AppInventoryRoute
   '/ngo': typeof AppNgoRoute
   '/payments': typeof AppPaymentsRoute
@@ -197,9 +221,12 @@ export interface FileRoutesById {
   '/_app/academic': typeof AppAcademicRoute
   '/_app/accounting': typeof AppAccountingRoute
   '/_app/attendance': typeof AppAttendanceRoute
+  '/_app/calendar': typeof AppCalendarRoute
+  '/_app/classes': typeof AppClassesRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/debtors': typeof AppDebtorsRoute
   '/_app/fees': typeof AppFeesRoute
+  '/_app/gradebook': typeof AppGradebookRoute
   '/_app/inventory': typeof AppInventoryRoute
   '/_app/ngo': typeof AppNgoRoute
   '/_app/payments': typeof AppPaymentsRoute
@@ -222,9 +249,12 @@ export interface FileRouteTypes {
     | '/academic'
     | '/accounting'
     | '/attendance'
+    | '/calendar'
+    | '/classes'
     | '/dashboard'
     | '/debtors'
     | '/fees'
+    | '/gradebook'
     | '/inventory'
     | '/ngo'
     | '/payments'
@@ -245,9 +275,12 @@ export interface FileRouteTypes {
     | '/academic'
     | '/accounting'
     | '/attendance'
+    | '/calendar'
+    | '/classes'
     | '/dashboard'
     | '/debtors'
     | '/fees'
+    | '/gradebook'
     | '/inventory'
     | '/ngo'
     | '/payments'
@@ -269,9 +302,12 @@ export interface FileRouteTypes {
     | '/_app/academic'
     | '/_app/accounting'
     | '/_app/attendance'
+    | '/_app/calendar'
+    | '/_app/classes'
     | '/_app/dashboard'
     | '/_app/debtors'
     | '/_app/fees'
+    | '/_app/gradebook'
     | '/_app/inventory'
     | '/_app/ngo'
     | '/_app/payments'
@@ -393,6 +429,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInventoryRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/gradebook': {
+      id: '/_app/gradebook'
+      path: '/gradebook'
+      fullPath: '/gradebook'
+      preLoaderRoute: typeof AppGradebookRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/fees': {
       id: '/_app/fees'
       path: '/fees'
@@ -412,6 +455,20 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/classes': {
+      id: '/_app/classes'
+      path: '/classes'
+      fullPath: '/classes'
+      preLoaderRoute: typeof AppClassesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/calendar': {
+      id: '/_app/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof AppCalendarRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/attendance': {
@@ -456,9 +513,12 @@ interface AppRouteChildren {
   AppAcademicRoute: typeof AppAcademicRoute
   AppAccountingRoute: typeof AppAccountingRoute
   AppAttendanceRoute: typeof AppAttendanceRoute
+  AppCalendarRoute: typeof AppCalendarRoute
+  AppClassesRoute: typeof AppClassesRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppDebtorsRoute: typeof AppDebtorsRoute
   AppFeesRoute: typeof AppFeesRoute
+  AppGradebookRoute: typeof AppGradebookRoute
   AppInventoryRoute: typeof AppInventoryRoute
   AppNgoRoute: typeof AppNgoRoute
   AppPaymentsRoute: typeof AppPaymentsRoute
@@ -477,9 +537,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppAcademicRoute: AppAcademicRoute,
   AppAccountingRoute: AppAccountingRoute,
   AppAttendanceRoute: AppAttendanceRoute,
+  AppCalendarRoute: AppCalendarRoute,
+  AppClassesRoute: AppClassesRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppDebtorsRoute: AppDebtorsRoute,
   AppFeesRoute: AppFeesRoute,
+  AppGradebookRoute: AppGradebookRoute,
   AppInventoryRoute: AppInventoryRoute,
   AppNgoRoute: AppNgoRoute,
   AppPaymentsRoute: AppPaymentsRoute,

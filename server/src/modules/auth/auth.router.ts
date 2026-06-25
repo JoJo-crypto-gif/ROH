@@ -24,6 +24,9 @@ router.post("/login", async (req: Request, res: Response, next: NextFunction) =>
       maxAge: parseDuration(config.jwt.refreshExpiresIn),
     });
 
+    // Attach user to req so Morgan logs it
+    (req as any).user = { id: result.user.id };
+
     res.json({
       accessToken: result.accessToken,
       user: result.user,
@@ -51,6 +54,9 @@ router.post("/refresh", async (req: Request, res: Response, next: NextFunction) 
       path: "/auth",
       maxAge: parseDuration(config.jwt.refreshExpiresIn),
     });
+
+    // Attach user to req so Morgan logs it
+    (req as any).user = { id: result.user.id };
 
     res.json({
       accessToken: result.accessToken,

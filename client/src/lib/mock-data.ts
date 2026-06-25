@@ -132,16 +132,20 @@ export const payments: Payment[] = Array.from({ length: 22 }).map((_, i) => ({
   recordedBy: "Michael Otieno",
 }));
 
-export function studentTotalBilled(studentId: string) {
+export function studentTotalBilled(studentId: string, classId?: string | null) {
   const s = students.find(x => x.id === studentId);
-  if (!s) return 0;
-  return feeItems.filter(f => !f.classId || f.classId === s.classId).reduce((a, f) => a + f.amount, 0);
+  const targetClassId = s?.classId || classId || "c-p1";
+  return feeItems.filter(f => !f.classId || f.classId === targetClassId).reduce((a, f) => a + f.amount, 0);
 }
-export function studentTotalPaid(studentId: string) {
-  return payments.filter(p => p.studentId === studentId && p.status === "Success").reduce((a, p) => a + p.amount, 0);
+export function studentTotalPaid(studentId: string, classId?: string | null) {
+  const s = students.find(x => x.id === studentId);
+  if (s) {
+    return payments.filter(p => p.studentId === studentId && p.status === "Success").reduce((a, p) => a + p.amount, 0);
+  }
+  return 120000;
 }
-export function studentBalance(studentId: string) {
-  return studentTotalBilled(studentId) - studentTotalPaid(studentId);
+export function studentBalance(studentId: string, classId?: string | null) {
+  return studentTotalBilled(studentId, classId) - studentTotalPaid(studentId, classId);
 }
 
 // Attendance: today's pseudo data
