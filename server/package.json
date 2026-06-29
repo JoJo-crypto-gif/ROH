@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "test": "node --test --import tsx \"src/**/*.test.ts\"",
+    "test:finance:integration": "node scripts/run-finance-integration.mjs",
     "start": "node dist/index.js",
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
@@ -36,7 +38,9 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^22.16.5",
     "@types/nodemailer": "^6.4.17",
+    "@types/supertest": "^6.0.3",
     "prisma": "^6.9.0",
+    "supertest": "^7.1.4",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }

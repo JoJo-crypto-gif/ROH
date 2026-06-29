@@ -1,99 +1,141 @@
+import {
+  AcademicYearStatus,
+  EnrollmentStatus,
+  StudentStatus,
+} from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/errors.js";
+import { getAcademicAccessScope } from "../academic/services/access.service.js";
+import { chargePublishedSchedulesForEnrolment } from "../finance/finance.service.js";
 
-function formatStudent(s: any) {
-  const activeEnrolment = s.enrolments?.[0];
+const ATTENDANCE_STATUSES = ["PRESENT", "ABSENT", "LATE", "EXCUSED"] as const;
+
+function dateOnly(date: Date | null | undefined) {
+  return date ? date.toISOString().slice(0, 10) : null;
+}
+
+function round(value: number | null | undefined, precision = 1) {
+  if (value === null || value === undefined || !Number.isFinite(value))
+    return null;
+  const factor = 10 ** precision;
+  return Math.round(value * factor) / factor;
+}
+
+function summarizeAttendance(records: { status: string }[]) {
+  const counts = Object.fromEntries(
+    ATTENDANCE_STATUSES.map((status) => [status, 0]),
+  ) as Record<(typeof ATTENDANCE_STATUSES)[number], number>;
+  for (const record of records) {
+    if (record.status in counts)
+      counts[record.status as keyof typeof counts] += 1;
+  }
+  const total = records.length;
   return {
-    id: s.id,
-    admissionNo: s.admissionNo,
-    firstName: s.firstName,
-    lastName: s.lastName,
-    gender: s.gender,
-    dob: s.dob.toISOString().slice(0, 10),
-    status: s.status,
-    enrolledAt: s.enrolledAt.toISOString().slice(0, 10),
-    guardianName: s.guardianName,
-    guardianPhone: s.guardianPhone,
-    guardianRelation: s.guardianRelation,
-    guardianEmail: s.guardianEmail,
-    guardian: {
-      name: s.guardianName,
-      phone: s.guardianPhone,
-      relation: s.guardianRelation,
-      email: s.guardianEmail,
-    },
-    address: s.address,
-    photoColor: s.photoColor,
-    classId: activeEnrolment?.classRoom?.id || null,
-    className: activeEnrolment?.classRoom?.name || "Unassigned",
+    ...counts,
+    total,
+    attendanceRate: total
+      ? round(((counts.PRESENT + counts.LATE) / total) * 100)
+      : null,
   };
 }
 
-export async function listStudents(
-  filters: { classId?: string; status?: string; search?: string },
-  restrictClassId?: string
-) {
-  const where: any = {};
+function formatStudent(student: any) {
+  const enrolment = student.enrolments?.[0];
+  return {
+    id: student.id,
+    admissionNo: student.admissionNo,
+    firstName: student.firstName,
+    lastName: student.lastName,
+    gender: student.gender,
+    dob: student.dob.toISOString().slice(0, 10),
+    status: student.status.toLowerCase(),
+    enrolledAt: student.enrolledAt.toISOString().slice(0, 10),
+    guardianName: student.guardianName,
+    guardianPhone: student.guardianPhone,
+    guardianRelation: student.guardianRelation,
+    guardianEmail: student.guardianEmail,
+    guardian: {
+      name: student.guardianName,
+      phone: student.guardianPhone,
+      relation: student.guardianRelation,
+      email: student.guardianEmail,
+    },
+    address: student.address,
+    photoColor: student.photoColor,
+    enrolmentId: enrolment?.id ?? null,
+    classSectionId: enrolment?.classSection?.id ?? null,
+    classId: enrolment?.classSection?.id ?? null,
+    className: enrolment?.classSection?.name ?? "Unassigned",
+    gradeLevelName: enrolment?.classSection?.gradeLevel?.name ?? "Unassigned",
+    academicYearId: enrolment?.academicYearId ?? null,
+  };
+}
 
-  if (filters.search) {
+function activeEnrolmentInclude() {
+  return {
+    enrolments: {
+      where: { academicYear: { status: AcademicYearStatus.ACTIVE } },
+      include: { classSection: { include: { gradeLevel: true } } },
+    },
+  } as const;
+}
+
+export async function listStudents(
+  filters: { classSectionId?: string; status?: string; search?: string },
+  userId: string,
+  roleSlug: string,
+) {
+  const accessScope = await getAcademicAccessScope(userId, roleSlug);
+  if (accessScope === "NONE") return [];
+  const where: any = {};
+  if (filters.search)
     where.OR = [
       { firstName: { contains: filters.search, mode: "insensitive" } },
       { lastName: { contains: filters.search, mode: "insensitive" } },
       { admissionNo: { contains: filters.search, mode: "insensitive" } },
     ];
-  }
-
-  if (filters.status && filters.status !== "all") {
-    where.status = filters.status;
-  }
-
-  const targetClassId = restrictClassId || (filters.classId && filters.classId !== "all" ? filters.classId : undefined);
-  if (targetClassId) {
-    where.enrolments = {
-      some: {
-        classId: targetClassId,
-        academicYear: { active: true },
-      },
-    };
-  }
-
+  if (filters.status && filters.status !== "all")
+    where.status = filters.status.toUpperCase();
+  const enrolmentWhere: any = {
+    academicYear: { status: AcademicYearStatus.ACTIVE },
+  };
+  if (filters.classSectionId && filters.classSectionId !== "all")
+    enrolmentWhere.classSectionId = filters.classSectionId;
+  if (accessScope === "ASSIGNED")
+    enrolmentWhere.classSection = { classTeacherId: userId };
+  if (Object.keys(enrolmentWhere).length)
+    where.enrolments = { some: enrolmentWhere };
   const students = await prisma.student.findMany({
     where,
-    include: {
-      enrolments: {
-        where: {
-          academicYear: { active: true },
-        },
-        include: {
-          classRoom: true,
-        },
-      },
-    },
+    include: activeEnrolmentInclude(),
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
-
   return students.map(formatStudent);
 }
 
-export async function getStudentById(id: string) {
+export async function getStudentById(
+  id: string,
+  userId: string,
+  roleSlug: string,
+) {
   const student = await prisma.student.findUnique({
     where: { id },
-    include: {
-      enrolments: {
-        where: {
-          academicYear: { active: true },
-        },
-        include: {
-          classRoom: true,
-        },
-      },
-    },
+    include: activeEnrolmentInclude(),
   });
-
-  if (!student) {
-    throw AppError.notFound("Student not found");
+  if (!student) throw AppError.notFound("Student not found.");
+  const accessScope = await getAcademicAccessScope(userId, roleSlug);
+  if (accessScope === "NONE") {
+    throw AppError.forbidden("You do not have access to school students.");
   }
-
+  const enrolment = student.enrolments[0];
+  if (
+    accessScope === "ASSIGNED" &&
+    enrolment?.classSection.classTeacherId !== userId
+  ) {
+    throw AppError.forbidden(
+      "You can view only students in your assigned section.",
+    );
+  }
   return formatStudent(student);
 }
 
@@ -107,42 +149,59 @@ export async function createStudent(input: {
   guardianRelation: string;
   guardianEmail?: string | null;
   address: string;
-  classId: string;
+  classSectionId?: string;
+  classId?: string;
+  feeEffectiveTermId?: string;
 }) {
   const activeYear = await prisma.academicYear.findFirst({
-    where: { active: true },
+    where: { status: AcademicYearStatus.ACTIVE },
   });
-
-  if (!activeYear) {
-    throw AppError.badRequest("No active academic year configured. Please activate an academic year first.");
-  }
-
-  const classRoom = await prisma.classRoom.findUnique({
-    where: { id: input.classId },
+  if (!activeYear)
+    throw AppError.badRequest("No active academic year is configured.");
+  const classSectionId = input.classSectionId ?? input.classId!;
+  const section = await prisma.classSection.findUnique({
+    where: { id: classSectionId },
   });
-
-  if (!classRoom) {
-    throw AppError.badRequest("Selected classroom does not exist.");
-  }
-
-  // Generate unique admission number
-  const yearClean = activeYear.name.replace(/\s+/g, "").split("/")[0] || "2025";
-  let count = await prisma.studentEnrolment.count({
+  if (!section || section.academicYearId !== activeYear.id || !section.active)
+    throw AppError.badRequest(
+      "Select an active class section in the current academic year.",
+    );
+  const terms = await prisma.term.findMany({
     where: { academicYearId: activeYear.id },
+    orderBy: { sequence: "asc" },
   });
-  let admissionNo = `ADM/${yearClean}/${String(1000 + count + 1)}`;
-  let exists = await prisma.student.findUnique({ where: { admissionNo } });
-  while (exists) {
-    count++;
-    admissionNo = `ADM/${yearClean}/${String(1000 + count + 1)}`;
-    exists = await prisma.student.findUnique({ where: { admissionNo } });
-  }
-
-  const colors = ["#0f766e", "#15803d", "#0369a1", "#7c3aed", "#b45309", "#be123c", "#0d9488", "#4d7c0f"];
-  const photoColor = colors[Math.floor(Math.random() * colors.length)];
-
+  const defaultTerm =
+    terms.find((term) => term.status === "ACTIVE") ??
+    terms.find((term) => term.status === "PENDING") ??
+    terms[0];
+  const feeEffectiveTermId = input.feeEffectiveTermId ?? defaultTerm?.id;
+  if (
+    !feeEffectiveTermId ||
+    !terms.some((term) => term.id === feeEffectiveTermId)
+  )
+    throw AppError.badRequest(
+      "Select a fee-effective term from the active academic year.",
+    );
+  const yearPrefix =
+    activeYear.name.replace(/\s+/g, "").split("/")[0] ??
+    String(new Date().getUTCFullYear());
+  const count = await prisma.student.count();
+  let counter = count + 1001;
+  let admissionNo = `ADM/${yearPrefix}/${counter}`;
+  while (await prisma.student.findUnique({ where: { admissionNo } }))
+    admissionNo = `ADM/${yearPrefix}/${++counter}`;
+  const colors = [
+    "#0f766e",
+    "#15803d",
+    "#0369a1",
+    "#7c3aed",
+    "#b45309",
+    "#be123c",
+    "#0d9488",
+    "#4d7c0f",
+  ];
   const student = await prisma.$transaction(async (tx) => {
-    const s = await tx.student.create({
+    const created = await tx.student.create({
       data: {
         admissionNo,
         firstName: input.firstName,
@@ -154,29 +213,23 @@ export async function createStudent(input: {
         guardianRelation: input.guardianRelation,
         guardianEmail: input.guardianEmail || null,
         address: input.address,
-        photoColor,
-      },
-    });
-
-    await tx.studentEnrolment.create({
-      data: {
-        studentId: s.id,
-        classId: input.classId,
-        academicYearId: activeYear.id,
-      },
-    });
-
-    return tx.student.findUnique({
-      where: { id: s.id },
-      include: {
+        photoColor: colors[Math.floor(Math.random() * colors.length)],
         enrolments: {
-          where: { academicYearId: activeYear.id },
-          include: { classRoom: true },
+          create: {
+            classSectionId,
+            academicYearId: activeYear.id,
+            status: EnrollmentStatus.ACTIVE,
+            feeEffectiveTermId,
+          },
         },
       },
+      include: activeEnrolmentInclude(),
     });
+    const enrolmentId = created.enrolments[0]?.id;
+    if (enrolmentId)
+      await chargePublishedSchedulesForEnrolment(tx, enrolmentId);
+    return created;
   });
-
   return formatStudent(student);
 }
 
@@ -187,69 +240,439 @@ export async function updateStudent(
     lastName?: string;
     gender?: string;
     dob?: Date;
-    status?: string;
+    status?: "ACTIVE" | "GRADUATED" | "WITHDRAWN" | "TRANSFERRED";
     guardianName?: string;
     guardianPhone?: string;
     guardianRelation?: string;
     guardianEmail?: string | null;
     address?: string;
+    classSectionId?: string;
     classId?: string;
-  }
+    feeEffectiveTermId?: string;
+  },
 ) {
   const student = await prisma.student.findUnique({ where: { id } });
-  if (!student) {
-    throw AppError.notFound("Student not found");
-  }
-
+  if (!student) throw AppError.notFound("Student not found.");
   const activeYear = await prisma.academicYear.findFirst({
-    where: { active: true },
+    where: { status: AcademicYearStatus.ACTIVE },
   });
-
-  await prisma.$transaction(async (tx) => {
-    // 1. Update personal details
-    await tx.student.update({
-      where: { id },
-      data: {
-        ...(input.firstName && { firstName: input.firstName }),
-        ...(input.lastName && { lastName: input.lastName }),
-        ...(input.gender && { gender: input.gender }),
-        ...(input.dob && { dob: input.dob }),
-        ...(input.status && { status: input.status }),
-        ...(input.guardianName && { guardianName: input.guardianName }),
-        ...(input.guardianPhone && { guardianPhone: input.guardianPhone }),
-        ...(input.guardianRelation && { guardianRelation: input.guardianRelation }),
-        ...(input.guardianEmail !== undefined && { guardianEmail: input.guardianEmail || null }),
-        ...(input.address && { address: input.address }),
-      },
-    });
-
-    // 2. Update classroom enrolment for the active academic year if classId is specified
-    if (input.classId && activeYear) {
-      const enrolment = await tx.studentEnrolment.findUnique({
+  const classSectionId = input.classSectionId ?? input.classId;
+  const currentEnrolment = activeYear
+    ? await prisma.studentEnrolment.findUnique({
         where: {
           studentId_academicYearId: {
             studentId: id,
             academicYearId: activeYear.id,
           },
         },
-      });
-
-      if (enrolment) {
-        await tx.studentEnrolment.update({
-          where: { id: enrolment.id },
-          data: { classId: input.classId },
-        });
-      } else {
-        await tx.studentEnrolment.create({
-          data: {
+      })
+    : null;
+  if (classSectionId && activeYear) {
+    const section = await prisma.classSection.findUnique({
+      where: { id: classSectionId },
+    });
+    if (!section || section.academicYearId !== activeYear.id)
+      throw AppError.badRequest(
+        "Selected class section is not in the active academic year.",
+      );
+  }
+  if (input.feeEffectiveTermId && activeYear) {
+    const term = await prisma.term.findUnique({
+      where: { id: input.feeEffectiveTermId },
+    });
+    if (!term || term.academicYearId !== activeYear.id)
+      throw AppError.badRequest(
+        "The fee-effective term must belong to the active academic year.",
+      );
+  }
+  await prisma.$transaction(async (tx) => {
+    await tx.student.update({
+      where: { id },
+      data: {
+        ...(input.firstName !== undefined && { firstName: input.firstName }),
+        ...(input.lastName !== undefined && { lastName: input.lastName }),
+        ...(input.gender !== undefined && { gender: input.gender }),
+        ...(input.dob !== undefined && { dob: input.dob }),
+        ...(input.status !== undefined && {
+          status: input.status as StudentStatus,
+        }),
+        ...(input.guardianName !== undefined && {
+          guardianName: input.guardianName,
+        }),
+        ...(input.guardianPhone !== undefined && {
+          guardianPhone: input.guardianPhone,
+        }),
+        ...(input.guardianRelation !== undefined && {
+          guardianRelation: input.guardianRelation,
+        }),
+        ...(input.guardianEmail !== undefined && {
+          guardianEmail: input.guardianEmail || null,
+        }),
+        ...(input.address !== undefined && { address: input.address }),
+      },
+    });
+    const effectiveClassSectionId =
+      classSectionId ?? currentEnrolment?.classSectionId;
+    if (
+      (classSectionId || input.feeEffectiveTermId) &&
+      activeYear &&
+      effectiveClassSectionId
+    ) {
+      const enrolment = await tx.studentEnrolment.upsert({
+        where: {
+          studentId_academicYearId: {
             studentId: id,
-            classId: input.classId,
             academicYearId: activeYear.id,
           },
-        });
-      }
+        },
+        update: {
+          classSectionId: effectiveClassSectionId,
+          ...(input.feeEffectiveTermId && {
+            feeEffectiveTermId: input.feeEffectiveTermId,
+          }),
+        },
+        create: {
+          studentId: id,
+          academicYearId: activeYear.id,
+          classSectionId: effectiveClassSectionId,
+          status: EnrollmentStatus.ACTIVE,
+          feeEffectiveTermId: input.feeEffectiveTermId,
+        },
+      });
+      await chargePublishedSchedulesForEnrolment(tx, enrolment.id);
     }
   });
+  return getStudentById(id, "", "super-admin");
+}
 
-  return getStudentById(id);
+export async function getAcademicHistory(
+  id: string,
+  userId: string,
+  roleSlug: string,
+) {
+  const student = await prisma.student.findUnique({
+    where: { id },
+    include: {
+      enrolments: {
+        include: {
+          academicYear: {
+            include: {
+              terms: { orderBy: { sequence: "asc" } },
+              assessmentScheme: {
+                include: { components: { orderBy: { sequence: "asc" } } },
+              },
+            },
+          },
+          classSection: {
+            include: {
+              gradeLevel: true,
+              classTeacher: { select: { id: true, name: true, email: true } },
+            },
+          },
+          attendance: {
+            include: {
+              term: {
+                select: { id: true, name: true, sequence: true, status: true },
+              },
+            },
+            orderBy: { date: "desc" },
+          },
+          assessmentResults: {
+            include: {
+              term: {
+                select: { id: true, name: true, sequence: true, status: true },
+              },
+              curriculumSubject: { include: { subject: true } },
+              scores: { include: { component: true } },
+            },
+          },
+          reports: {
+            include: {
+              versions: {
+                orderBy: { version: "desc" },
+                include: { publishedBy: { select: { id: true, name: true } } },
+              },
+              term: {
+                select: { id: true, name: true, sequence: true, status: true },
+              },
+            },
+          },
+          promotions: {
+            include: {
+              recommendedBy: { select: { id: true, name: true } },
+              approvedBy: { select: { id: true, name: true } },
+              nextEnrolment: {
+                include: {
+                  classSection: { include: { gradeLevel: true } },
+                  academicYear: true,
+                },
+              },
+            },
+          },
+          incomingPromotion: {
+            include: {
+              recommendedBy: { select: { id: true, name: true } },
+              approvedBy: { select: { id: true, name: true } },
+              currentEnrolment: {
+                include: {
+                  classSection: { include: { gradeLevel: true } },
+                  academicYear: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!student) throw AppError.notFound("Student not found.");
+  const accessScope = await getAcademicAccessScope(userId, roleSlug);
+  if (accessScope === "NONE") {
+    throw AppError.forbidden("You do not have access to school students.");
+  }
+  const hasCurrentAssignedEnrolment = student.enrolments.some(
+    (enrolment) =>
+      enrolment.academicYear.status === AcademicYearStatus.ACTIVE &&
+      enrolment.status === EnrollmentStatus.ACTIVE &&
+      enrolment.classSection.classTeacherId === userId,
+  );
+  if (accessScope === "ASSIGNED" && !hasCurrentAssignedEnrolment) {
+    throw AppError.forbidden(
+      "You can view only students in your assigned section.",
+    );
+  }
+
+  const sortedEnrolments = [...student.enrolments].sort(
+    (a, b) =>
+      b.academicYear.startDate.getTime() - a.academicYear.startDate.getTime(),
+  );
+  const activeEnrolment =
+    sortedEnrolments.find(
+      (enrolment) =>
+        enrolment.academicYear.status === AcademicYearStatus.ACTIVE &&
+        enrolment.status === EnrollmentStatus.ACTIVE,
+    ) ?? null;
+  const lastEnrolment = sortedEnrolments[0] ?? null;
+  const allAttendance = sortedEnrolments.flatMap(
+    (enrolment) => enrolment.attendance,
+  );
+  const publishedVersions = sortedEnrolments.flatMap((enrolment) =>
+    enrolment.reports.flatMap((report) => report.versions),
+  );
+
+  return {
+    student: {
+      id: student.id,
+      admissionNo: student.admissionNo,
+      firstName: student.firstName,
+      lastName: student.lastName,
+      gender: student.gender,
+      dob: dateOnly(student.dob),
+      status: student.status,
+      enrolledAt: dateOnly(student.enrolledAt),
+      guardian: {
+        name: student.guardianName,
+        phone: student.guardianPhone,
+        relation: student.guardianRelation,
+        email: student.guardianEmail,
+      },
+      address: student.address,
+      photoColor: student.photoColor,
+      currentClass: activeEnrolment
+        ? {
+            enrolmentId: activeEnrolment.id,
+            academicYear: activeEnrolment.academicYear.name,
+            gradeLevel: activeEnrolment.classSection.gradeLevel.name,
+            section: activeEnrolment.classSection.name,
+            status: activeEnrolment.status,
+            classTeacher:
+              activeEnrolment.classSection.classTeacher?.name ?? null,
+          }
+        : null,
+      lastClass: lastEnrolment
+        ? {
+            enrolmentId: lastEnrolment.id,
+            academicYear: lastEnrolment.academicYear.name,
+            gradeLevel: lastEnrolment.classSection.gradeLevel.name,
+            section: lastEnrolment.classSection.name,
+            status: lastEnrolment.status,
+            classTeacher: lastEnrolment.classSection.classTeacher?.name ?? null,
+          }
+        : null,
+    },
+    summary: {
+      enrolmentCount: sortedEnrolments.length,
+      reportCount: publishedVersions.length,
+      assessmentResultCount: sortedEnrolments.reduce(
+        (sum, enrolment) => sum + enrolment.assessmentResults.length,
+        0,
+      ),
+      attendance: summarizeAttendance(allAttendance),
+    },
+    enrolments: sortedEnrolments.map((enrolment) => {
+      const yearTerms = enrolment.academicYear.terms;
+      const termCards = yearTerms.map((term) => {
+        const termAttendance = enrolment.attendance.filter(
+          (record) => record.termId === term.id,
+        );
+        const termResults = enrolment.assessmentResults
+          .filter((result) => result.termId === term.id)
+          .sort(
+            (a, b) =>
+              a.curriculumSubject.sortOrder - b.curriculumSubject.sortOrder ||
+              a.curriculumSubject.subject.name.localeCompare(
+                b.curriculumSubject.subject.name,
+              ),
+          );
+        const report = enrolment.reports.find(
+          (item) => item.termId === term.id,
+        );
+        const totalScore =
+          report?.totalScore ??
+          termResults.reduce((sum, result) => sum + result.totalScore, 0);
+        const averageScore =
+          report?.averageScore ??
+          (termResults.length ? totalScore / termResults.length : null);
+
+        return {
+          id: term.id,
+          name: term.name,
+          sequence: term.sequence,
+          status: term.status,
+          startDate: dateOnly(term.startDate),
+          endDate: dateOnly(term.endDate),
+          attendance: {
+            summary: summarizeAttendance(termAttendance),
+            records: termAttendance.map((record) => ({
+              id: record.id,
+              date: dateOnly(record.date),
+              status: record.status,
+            })),
+          },
+          assessment: {
+            subjectCount: termResults.length,
+            totalScore: round(totalScore),
+            averageScore: round(averageScore),
+            subjects: termResults.map((result) => ({
+              id: result.id,
+              subjectName: result.curriculumSubject.subject.name,
+              subjectCode: result.curriculumSubject.subject.code,
+              totalScore: round(result.totalScore),
+              grade: result.grade,
+              remarks: result.remarks,
+              position: result.position,
+              scores: result.scores
+                .sort((a, b) => a.component.sequence - b.component.sequence)
+                .map((score) => ({
+                  componentId: score.componentId,
+                  componentName: score.component.name,
+                  componentCode: score.component.code,
+                  maxScore: round(score.component.maxScore),
+                  score: round(score.score),
+                })),
+            })),
+          },
+          report: report
+            ? {
+                id: report.id,
+                status: report.status,
+                conduct: report.conduct,
+                attitude: report.attitude,
+                teacherRemarks: report.teacherRemarks,
+                headteacherRemark: report.headteacherRemark,
+                position: report.position,
+                totalScore: round(report.totalScore),
+                averageScore: round(report.averageScore),
+                currentVersion: report.currentVersion,
+                versions: report.versions.map((version) => ({
+                  id: version.id,
+                  version: version.version,
+                  publishedAt: version.publishedAt.toISOString(),
+                  checksum: version.checksum,
+                  publishedBy: version.publishedBy?.name ?? null,
+                })),
+              }
+            : null,
+        };
+      });
+      const promotion = enrolment.promotions[0] ?? null;
+      const incomingPromotion = enrolment.incomingPromotion ?? null;
+      return {
+        id: enrolment.id,
+        status: enrolment.status,
+        completedAt: dateOnly(enrolment.completedAt),
+        academicYear: {
+          id: enrolment.academicYear.id,
+          name: enrolment.academicYear.name,
+          status: enrolment.academicYear.status,
+          startDate: dateOnly(enrolment.academicYear.startDate),
+          endDate: dateOnly(enrolment.academicYear.endDate),
+          termCount: enrolment.academicYear.termCount,
+        },
+        classSection: {
+          id: enrolment.classSection.id,
+          name: enrolment.classSection.name,
+          capacity: enrolment.classSection.capacity,
+          gradeLevel: {
+            id: enrolment.classSection.gradeLevel.id,
+            name: enrolment.classSection.gradeLevel.name,
+            order: enrolment.classSection.gradeLevel.order,
+            isFinal: enrolment.classSection.gradeLevel.isFinal,
+          },
+          classTeacher: enrolment.classSection.classTeacher
+            ? {
+                id: enrolment.classSection.classTeacher.id,
+                name: enrolment.classSection.classTeacher.name,
+                email: enrolment.classSection.classTeacher.email,
+              }
+            : null,
+        },
+        assessmentComponents:
+          enrolment.academicYear.assessmentScheme?.components.map(
+            (component) => ({
+              id: component.id,
+              name: component.name,
+              code: component.code,
+              maxScore: round(component.maxScore),
+              sequence: component.sequence,
+            }),
+          ) ?? [],
+        terms: termCards,
+        promotion: promotion
+          ? {
+              id: promotion.id,
+              decision: promotion.decision,
+              status: promotion.status,
+              remarks: promotion.remarks,
+              approvedAt: promotion.approvedAt?.toISOString() ?? null,
+              recommendedBy: promotion.recommendedBy?.name ?? null,
+              approvedBy: promotion.approvedBy?.name ?? null,
+              nextEnrolment: promotion.nextEnrolment
+                ? {
+                    id: promotion.nextEnrolment.id,
+                    academicYear: promotion.nextEnrolment.academicYear.name,
+                    section: promotion.nextEnrolment.classSection.name,
+                    gradeLevel:
+                      promotion.nextEnrolment.classSection.gradeLevel.name,
+                    status: promotion.nextEnrolment.status,
+                  }
+                : null,
+            }
+          : null,
+        arrivedFrom: incomingPromotion
+          ? {
+              decision: incomingPromotion.decision,
+              status: incomingPromotion.status,
+              academicYear:
+                incomingPromotion.currentEnrolment.academicYear.name,
+              section: incomingPromotion.currentEnrolment.classSection.name,
+              gradeLevel:
+                incomingPromotion.currentEnrolment.classSection.gradeLevel.name,
+              approvedAt: incomingPromotion.approvedAt?.toISOString() ?? null,
+              approvedBy: incomingPromotion.approvedBy?.name ?? null,
+            }
+          : null,
+      };
+    }),
+  };
 }

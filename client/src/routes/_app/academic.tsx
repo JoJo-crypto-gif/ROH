@@ -1,1095 +1,1244 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CalendarRange, BookOpen, Users, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  BookOpen,
+  CalendarDays,
+  Check,
+  Copy,
+  GraduationCap,
+  Plus,
+  Save,
+  School,
+  Settings2,
+} from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Forbidden } from "@/components/layout/Forbidden";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { academicApi, type ApiAssessmentScheme } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/lib/rbac";
-import { academicApi, type ApiAcademicYear, type ApiClassRoom, type ApiSubject } from "@/lib/api";
-import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_app/academic")({
-  head: () => ({ meta: [{ title: "Academic Setup — Lumen Suite" }] }),
+  head: () => ({ meta: [{ title: "Academic setup — Lumen Suite" }] }),
   component: AcademicPage,
 });
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong";
+}
+
+function statusTone(status: string) {
+  if (status === "ACTIVE") return "bg-success/15 text-[oklch(0.35_0.1_155)]";
+  if (status === "CLOSED") return "bg-muted text-muted-foreground";
+  return "bg-brand/10 text-brand";
+}
 
 function AcademicPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("years");
-
-  // Auth Gate
-  if (!hasPermission(user, "academic.view")) return <Forbidden />;
   const canManage = hasPermission(user, "academic.manage");
+  const canView = hasPermission(user, "academic.view");
 
-  // React Queries
-  const { data: yearsData, isLoading: loadingYears } = useQuery({
-    queryKey: ["academic-years"],
-    queryFn: academicApi.getYears,
+  const settingsQuery = useQuery({
+    queryKey: ["academic-settings"],
+    queryFn: academicApi.getSettings,
   });
+  const yearsQuery = useQuery({ queryKey: ["academic-years"], queryFn: academicApi.getYears });
+  const levelsQuery = useQuery({ queryKey: ["grade-levels"], queryFn: academicApi.getGradeLevels });
+  const subjectsQuery = useQuery({ queryKey: ["subjects"], queryFn: academicApi.getSubjects });
+  const teachersQuery = useQuery({ queryKey: ["teachers"], queryFn: academicApi.getTeachers });
+  const years = useMemo(() => yearsQuery.data?.years ?? [], [yearsQuery.data?.years]);
+  const levels = useMemo(
+    () => levelsQuery.data?.gradeLevels ?? [],
+    [levelsQuery.data?.gradeLevels],
+  );
+  const subjects = useMemo(
+    () => subjectsQuery.data?.subjects ?? [],
+    [subjectsQuery.data?.subjects],
+  );
+  const teachers = useMemo(
+    () => teachersQuery.data?.teachers ?? [],
+    [teachersQuery.data?.teachers],
+  );
 
-  const { data: classesData, isLoading: loadingClasses } = useQuery({
-    queryKey: ["classes"],
-    queryFn: academicApi.getClasses,
-  });
-
-  const { data: subjectsData, isLoading: loadingSubjects } = useQuery({
-    queryKey: ["subjects"],
-    queryFn: academicApi.getSubjects,
-  });
-
-  const { data: teachersData } = useQuery({
-    queryKey: ["teachers"],
-    queryFn: academicApi.getTeachers,
-    enabled: canManage,
-  });
-
-  // Query Data Selectors
-  const years = yearsData?.years ?? [];
-  const classrooms = classesData?.classrooms ?? [];
-  const subjects = subjectsData?.subjects ?? [];
-  const teachers = teachersData?.teachers ?? [];
-
-  // Mutations
-  const createYearMutation = useMutation({
-    mutationFn: academicApi.createYear,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["academic-years"] });
-      toast.success("Academic year created successfully");
-      setYearModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to create academic year"),
-  });
-
-  const updateYearMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name?: string; startDate?: string; endDate?: string; active?: boolean } }) =>
-      academicApi.updateYear(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["academic-years"] });
-      toast.success("Academic year updated successfully");
-      setYearModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to update academic year"),
-  });
-
-  const updateTermMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name?: string; startDate?: string; endDate?: string; active?: boolean } }) =>
-      academicApi.updateTerm(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["academic-years"] });
-      toast.success("Term updated successfully");
-      setTermModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to update term"),
-  });
-
-  const deleteYearMutation = useMutation({
-    mutationFn: academicApi.deleteYear,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["academic-years"] });
-      toast.success("Academic year deleted");
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to delete academic year"),
-  });
-
-  const createClassMutation = useMutation({
-    mutationFn: academicApi.createClass,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["classes"] });
-      toast.success("Classroom created successfully");
-      setClassModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to create classroom"),
-  });
-
-  const updateClassMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name?: string; level?: number; capacity?: number; teacherId?: string | null } }) =>
-      academicApi.updateClass(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["classes"] });
-      toast.success("Classroom updated successfully");
-      setClassModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to update classroom"),
-  });
-
-  const deleteClassMutation = useMutation({
-    mutationFn: academicApi.deleteClass,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["classes"] });
-      toast.success("Classroom deleted");
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to delete classroom"),
-  });
-
-  const createSubjectMutation = useMutation({
-    mutationFn: academicApi.createSubject,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subjects"] });
-      toast.success("Subject created successfully");
-      setSubjectModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to create subject"),
-  });
-
-  const updateSubjectMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name?: string; code?: string; teacherIds?: string[] } }) =>
-      academicApi.updateSubject(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subjects"] });
-      toast.success("Subject updated successfully");
-      setSubjectModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to update subject"),
-  });
-
-  const deleteSubjectMutation = useMutation({
-    mutationFn: academicApi.deleteSubject,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subjects"] });
-      toast.success("Subject deleted");
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to delete subject"),
-  });
-
-  const saveClassSubjectsMutation = useMutation({
-    mutationFn: ({ classId, data }: { classId: string; data: any }) =>
-      academicApi.saveClassroomSubjects(classId, data),
-    onSuccess: () => {
-      toast.success("Class subjects updated successfully");
-      setClassSubjectsModalOpen(false);
-    },
-    onError: (err: any) => toast.error(err.message || "Failed to update class subjects"),
-  });
-
-  // Modal States
-  const [yearModalOpen, setYearModalOpen] = useState(false);
-  const [termModalOpen, setTermModalOpen] = useState(false);
-  const [classModalOpen, setClassModalOpen] = useState(false);
-  const [subjectModalOpen, setSubjectModalOpen] = useState(false);
-  const [classSubjectsModalOpen, setClassSubjectsModalOpen] = useState(false);
-
-  // Form Fields State
-  const [editingYearId, setEditingYearId] = useState<string | null>(null);
-  const [yearName, setYearName] = useState("");
-  const [yearStartDate, setYearStartDate] = useState("");
-  const [yearEndDate, setYearEndDate] = useState("");
-  const [yearActive, setYearActive] = useState(false);
-
-  const [editingTermId, setEditingTermId] = useState<string | null>(null);
-  const [termName, setTermName] = useState("");
-  const [termStartDate, setTermStartDate] = useState("");
-  const [termEndDate, setTermEndDate] = useState("");
-  const [termActive, setTermActive] = useState(false);
-
-  const [editingClassId, setEditingClassId] = useState<string | null>(null);
-  const [className, setClassName] = useState("");
-  const [classLevel, setClassLevel] = useState(1);
-  const [classCapacity, setClassCapacity] = useState(35);
-  const [classTeacherId, setClassTeacherId] = useState<string>("");
-
-  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
-  const [subjectName, setSubjectName] = useState("");
-  const [subjectCode, setSubjectCode] = useState("");
-  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
-
-  // Class Subjects State
-  const [manageSubjectsClassId, setManageSubjectsClassId] = useState<string | null>(null);
-  const [draftClassSubjects, setDraftClassSubjects] = useState<{ subjectId: string; teacherId: string; passMark: number; weight: number }[]>([]);
-
-  const { data: classSubjectsData, isLoading: loadingClassSubjects } = useQuery({
-    queryKey: ["class-subjects", manageSubjectsClassId],
-    queryFn: () => academicApi.getClassroomSubjects(manageSubjectsClassId!),
-    enabled: !!manageSubjectsClassId,
-  });
-
+  const [selectedYearId, setSelectedYearId] = useState("");
+  const [selectedLevelId, setSelectedLevelId] = useState("");
   useEffect(() => {
-    if (classSubjectsData?.classSubjects) {
-      setDraftClassSubjects(classSubjectsData.classSubjects.map(cs => ({
-        subjectId: cs.subjectId,
-        teacherId: cs.teacherId || "",
-        passMark: cs.passMark,
-        weight: cs.weight,
-      })));
-    } else {
-      setDraftClassSubjects([]);
-    }
-  }, [classSubjectsData, manageSubjectsClassId]);
+    if (!selectedYearId && years.length)
+      setSelectedYearId(
+        (
+          years.find((year) => year.status === "DRAFT") ??
+          years.find((year) => year.status === "ACTIVE") ??
+          years[0]
+        ).id,
+      );
+  }, [years, selectedYearId]);
+  useEffect(() => {
+    if (!selectedLevelId && levels.length) setSelectedLevelId(levels[0].id);
+  }, [levels, selectedLevelId]);
 
-  // Form Submit Handlers
-  const handleYearSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (new Date(yearEndDate) <= new Date(yearStartDate)) {
-      return toast.error("End date must be after start date");
-    }
+  const sectionsQuery = useQuery({
+    queryKey: ["sections", selectedYearId],
+    queryFn: () => academicApi.getClasses(selectedYearId),
+    enabled: !!selectedYearId,
+  });
+  const curriculumQuery = useQuery({
+    queryKey: ["curriculum", selectedYearId, selectedLevelId],
+    queryFn: () => academicApi.getCurriculum(selectedYearId, selectedLevelId),
+    enabled: !!selectedYearId && !!selectedLevelId,
+  });
+  const schemeQuery = useQuery({
+    queryKey: ["assessment-scheme", selectedYearId],
+    queryFn: () => academicApi.getAssessmentScheme(selectedYearId),
+    enabled: !!selectedYearId,
+  });
+  const selectedYear = years.find((year) => year.id === selectedYearId);
+  const isDraft = selectedYear?.status === "DRAFT";
 
-    if (yearActive) {
-      if (!confirm("Are you sure? This will deactivate the current active year and its terms. Proceed?")) return;
-    }
-
-    if (editingYearId) {
-      updateYearMutation.mutate({ id: editingYearId, data: { name: yearName, startDate: yearStartDate, endDate: yearEndDate, active: yearActive } });
-    } else {
-      // Auto-generate 3 terms for convenience
-      const currentYear = new Date(yearStartDate).getFullYear() || new Date().getFullYear();
-      createYearMutation.mutate({
-        name: yearName,
-        startDate: yearStartDate,
-        endDate: yearEndDate,
-        active: yearActive,
-        terms: [
-          { name: "Term 1", startDate: `${currentYear}-09-01`, endDate: `${currentYear}-12-15` },
-          { name: "Term 2", startDate: `${currentYear + 1}-01-10`, endDate: `${currentYear + 1}-04-05` },
-          { name: "Term 3", startDate: `${currentYear + 1}-04-25`, endDate: `${currentYear + 1}-07-20` },
-        ],
-      });
-    }
+  const invalidateSetup = () => {
+    queryClient.invalidateQueries({ queryKey: ["academic-years"] });
+    queryClient.invalidateQueries({ queryKey: ["sections"] });
+    queryClient.invalidateQueries({ queryKey: ["curriculum"] });
+    queryClient.invalidateQueries({ queryKey: ["assessment-scheme"] });
   };
 
-  const handleTermSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (new Date(termEndDate) <= new Date(termStartDate)) {
-      return toast.error("End date must be after start date");
-    }
-
-    if (termActive) {
-      if (!confirm("Are you sure? This will deactivate the current active term, and make this term's academic year active. Proceed?")) return;
-    }
-
-    if (editingTermId) {
-      updateTermMutation.mutate({ id: editingTermId, data: { name: termName, startDate: termStartDate, endDate: termEndDate, active: termActive } });
-    }
-  };
-
-  const handleClassSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const data = {
-      name: className,
-      level: classLevel,
-      capacity: classCapacity,
-      teacherId: classTeacherId || null,
-    };
-    if (editingClassId) {
-      updateClassMutation.mutate({ id: editingClassId, data });
-    } else {
-      createClassMutation.mutate(data);
-    }
-  };
-
-  const handleSubjectSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const data = {
-      name: subjectName,
-      code: subjectCode.toUpperCase(),
-      teacherIds: selectedTeacherIds,
-    };
-    if (editingSubjectId) {
-      updateSubjectMutation.mutate({ id: editingSubjectId, data });
-    } else {
-      createSubjectMutation.mutate(data);
-    }
-  };
-
-  const handleTeacherCheckboxChange = (teacherId: string, checked: boolean) => {
-    if (checked) {
-      setSelectedTeacherIds([...selectedTeacherIds, teacherId]);
-    } else {
-      setSelectedTeacherIds(selectedTeacherIds.filter((id) => id !== teacherId));
-    }
-  };
-
-  const isLoading =
-    (activeTab === "years" && loadingYears) ||
-    (activeTab === "classes" && loadingClasses) ||
-    (activeTab === "subjects" && loadingSubjects);
+  if (!canView) return <Forbidden />;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Academic setup"
-        description="Years, terms, classes, subjects and teacher assignments."
-        actions={
-          canManage ? (
-            <div className="flex gap-2">
-              {activeTab === "years" && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingYearId(null);
-                    setYearName("");
-                    setYearStartDate("");
-                    setYearEndDate("");
-                    setYearActive(false);
-                    setYearModalOpen(true);
-                  }}
-                >
-                  <Plus className="mr-1 h-4 w-4" /> New Year
-                </Button>
-              )}
-              {activeTab === "classes" && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingClassId(null);
-                    setClassName("");
-                    setClassLevel(1);
-                    setClassCapacity(35);
-                    setClassTeacherId("");
-                    setClassModalOpen(true);
-                  }}
-                >
-                  <Plus className="mr-1 h-4 w-4" /> New Class
-                </Button>
-              )}
-              {activeTab === "subjects" && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingSubjectId(null);
-                    setSubjectName("");
-                    setSubjectCode("");
-                    setSelectedTeacherIds([]);
-                    setSubjectModalOpen(true);
-                  }}
-                >
-                  <Plus className="mr-1 h-4 w-4" /> New Subject
-                </Button>
-              )}
-            </div>
-          ) : null
-        }
+        title="Academic foundation"
+        description="Configure progression, yearly class streams, curriculum, terms and assessment rules."
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="years">Years & Terms</TabsTrigger>
-          <TabsTrigger value="classes">Classes</TabsTrigger>
-          <TabsTrigger value="subjects">Subjects</TabsTrigger>
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-4">
+        <div className="min-w-56">
+          <label className="text-xs font-medium text-muted-foreground">Working academic year</label>
+          <select
+            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={selectedYearId}
+            onChange={(event) => setSelectedYearId(event.target.value)}
+          >
+            {years.map((year) => (
+              <option key={year.id} value={year.id}>
+                {year.name} — {year.status}
+              </option>
+            ))}
+          </select>
+        </div>
+        {selectedYear && (
+          <Badge className={statusTone(selectedYear.status)}>
+            {selectedYear.termCount} terms · {selectedYear.status}
+          </Badge>
+        )}
+        {selectedYear?.status === "ACTIVE" && (
+          <p className="text-xs text-muted-foreground">
+            Year structure is locked. Class-teacher assignments remain editable.
+          </p>
+        )}
+        {selectedYear?.status === "CLOSED" && (
+          <p className="text-xs text-muted-foreground">
+            Historical structure is read-only. Select a draft or active year.
+          </p>
+        )}
+      </div>
+
+      <Tabs defaultValue="years">
+        <TabsList className="flex h-auto flex-wrap justify-start">
+          <TabsTrigger value="years">
+            <CalendarDays className="mr-1.5 h-4 w-4" />
+            Years & terms
+          </TabsTrigger>
+          <TabsTrigger value="levels">
+            <GraduationCap className="mr-1.5 h-4 w-4" />
+            Grade levels
+          </TabsTrigger>
+          <TabsTrigger value="sections">
+            <School className="mr-1.5 h-4 w-4" />
+            Class streams
+          </TabsTrigger>
+          <TabsTrigger value="subjects">
+            <BookOpen className="mr-1.5 h-4 w-4" />
+            Subjects
+          </TabsTrigger>
+          <TabsTrigger value="curriculum">
+            <Check className="mr-1.5 h-4 w-4" />
+            Curriculum
+          </TabsTrigger>
+          <TabsTrigger value="assessment">
+            <Settings2 className="mr-1.5 h-4 w-4" />
+            Assessment
+          </TabsTrigger>
         </TabsList>
 
-        {isLoading ? (
-          <div className="flex h-48 items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-brand" />
-              <p className="text-sm text-muted-foreground">Loading academic data…</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* YEARS & TERMS */}
-            <TabsContent value="years" className="mt-4 space-y-4">
-              {years.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground text-sm">No academic years configured.</div>
-              ) : (
-                years.map((y) => (
-                  <div key={y.id} className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <CalendarRange className="h-4 w-4 text-brand" />
-                        <h3 className="text-base font-semibold">Academic year {y.name}</h3>
-                        {y.active ? (
-                          <Badge className="bg-success/20 text-[oklch(0.35_0.1_155)] hover:bg-success/20">Active</Badge>
-                        ) : (
-                          canManage && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                if (confirm("Are you sure? This will deactivate the current active year and its terms. Proceed?")) {
-                                  updateYearMutation.mutate({ id: y.id, data: { active: true } });
-                                }
-                              }}
-                              className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-                            >
-                              Make Active
-                            </Button>
-                          )
-                        )}
-                      </div>
-                      {canManage && (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditingYearId(y.id);
-                              setYearName(y.name);
-                              setYearStartDate(y.startDate?.split("T")[0] || "");
-                              setYearEndDate(y.endDate?.split("T")[0] || "");
-                              setYearActive(y.active);
-                              setYearModalOpen(true);
-                            }}
-                          >
-                            <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
-                          </Button>
-                          {!y.active && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
-                              onClick={() => {
-                                if (confirm(`Are you sure you want to delete academic year ${y.name}?`)) {
-                                  deleteYearMutation.mutate(y.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      {y.terms.map((t) => (
-                        <div
-                          key={t.id}
-                          className={`rounded-lg border p-3 relative group ${t.active ? "border-brand/40 bg-brand/5" : "border-border bg-muted/30"}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">{t.name}</span>
-                            {t.active && <Badge className="bg-brand/20 text-brand text-[10px] py-0">Active Term</Badge>}
-                          </div>
-                          <div className="mt-0.5 text-xs text-muted-foreground">
-                            {new Date(t.startDate).toLocaleDateString()} → {new Date(t.endDate).toLocaleDateString()}
-                          </div>
-                          {canManage && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity bg-background/50 hover:bg-background cursor-pointer"
-                              onClick={() => {
-                                setEditingTermId(t.id);
-                                setTermName(t.name);
-                                setTermStartDate(t.startDate.split("T")[0]);
-                                setTermEndDate(t.endDate.split("T")[0]);
-                                setTermActive(t.active);
-                                setTermModalOpen(true);
-                              }}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </TabsContent>
-
-            {/* CLASSES */}
-            <TabsContent value="classes" className="mt-4">
-              {classrooms.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground text-sm">No classrooms configured.</div>
-              ) : (
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  {classrooms.map((c) => {
-                    const count = c.studentCount;
-                    const percent = Math.min((count / c.capacity) * 100, 100);
-                    return (
-                      <div key={c.id} className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="text-base font-semibold">{c.name}</h3>
-                            <p className="text-xs text-muted-foreground">Level {c.level} · Capacity {c.capacity}</p>
-                          </div>
-                          {canManage && (
-                            <div className="flex gap-0.5">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 px-2 text-xs font-medium cursor-pointer"
-                                onClick={() => {
-                                  setManageSubjectsClassId(c.id);
-                                  // The query will fetch data, but we initialize draft locally with an empty array.
-                                  // We'll sync draftClassSubjects in a useEffect when query completes.
-                                  setClassSubjectsModalOpen(true);
-                                }}
-                              >
-                                Subjects
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 cursor-pointer"
-                                onClick={() => {
-                                  setEditingClassId(c.id);
-                                  setClassName(c.name);
-                                  setClassLevel(c.level);
-                                  setClassCapacity(c.capacity);
-                                  setClassTeacherId(c.teacherId ?? "");
-                                  setClassModalOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
-                                onClick={() => {
-                                  if (confirm(`Are you sure you want to delete classroom ${c.name}?`)) {
-                                    deleteClassMutation.mutate(c.id);
-                                  }
-                                }}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-3 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Enrolled</span>
-                            <span className="font-medium">{count} / {c.capacity}</span>
-                          </div>
-                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div className="h-full bg-brand" style={{ width: `${percent}%` }} />
-                          </div>
-                        </div>
-                        <div className="mt-4 flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Class teacher</span>
-                          <span className="font-medium text-foreground">{c.teacherName}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </TabsContent>
-
-            {/* SUBJECTS */}
-            <TabsContent value="subjects" className="mt-4">
-              {subjects.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground text-sm">No subjects configured.</div>
-              ) : (
-                <div className="rounded-xl border border-border bg-card overflow-hidden shadow-[var(--shadow-card)]">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-2.5 text-left font-medium">Subject</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Code</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Teachers</th>
-                        {canManage && <th className="px-4 py-2.5"></th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {subjects.map((sub) => (
-                        <tr key={sub.id} className="hover:bg-muted/10">
-                          <td className="px-4 py-3 font-medium">
-                            <span className="inline-flex items-center gap-2">
-                              <BookOpen className="h-4 w-4 text-muted-foreground" /> {sub.name}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{sub.code}</td>
-                          <td className="px-4 py-3 text-muted-foreground">
-                            {sub.teachers.map((t) => t.name).join(", ") || "—"}
-                          </td>
-                          {canManage && (
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 cursor-pointer"
-                                  onClick={() => {
-                                    setEditingSubjectId(sub.id);
-                                    setSubjectName(sub.name);
-                                    setSubjectCode(sub.code);
-                                    setSelectedTeacherIds(sub.teachers.map((t) => t.id));
-                                    setSubjectModalOpen(true);
-                                  }}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you want to delete subject ${sub.name}?`)) {
-                                      deleteSubjectMutation.mutate(sub.id);
-                                    }
-                                  }}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </TabsContent>
-          </>
-        )}
+        <TabsContent value="years" className="mt-4">
+          <YearsPanel
+            canManage={canManage}
+            years={years}
+            defaultTermCount={settingsQuery.data?.settings.defaultTermCount ?? 3}
+            invalidate={invalidateSetup}
+          />
+        </TabsContent>
+        <TabsContent value="levels" className="mt-4">
+          <LevelsPanel
+            canManage={canManage}
+            levels={levels}
+            refresh={() => queryClient.invalidateQueries({ queryKey: ["grade-levels"] })}
+          />
+        </TabsContent>
+        <TabsContent value="sections" className="mt-4">
+          <SectionsPanel
+            canManage={canManage && isDraft}
+            canAssign={canManage && selectedYear?.status !== "CLOSED"}
+            yearId={selectedYearId}
+            sections={sectionsQuery.data?.sections ?? []}
+            levels={levels}
+            teachers={teachers}
+            refresh={() =>
+              queryClient.invalidateQueries({ queryKey: ["sections", selectedYearId] })
+            }
+          />
+        </TabsContent>
+        <TabsContent value="subjects" className="mt-4">
+          <SubjectsPanel
+            canManage={canManage}
+            subjects={subjects}
+            refresh={() => queryClient.invalidateQueries({ queryKey: ["subjects"] })}
+          />
+        </TabsContent>
+        <TabsContent value="curriculum" className="mt-4">
+          <CurriculumPanel
+            canManage={canManage && isDraft}
+            yearId={selectedYearId}
+            levelId={selectedLevelId}
+            setLevelId={setSelectedLevelId}
+            levels={levels}
+            subjects={subjects}
+            current={curriculumQuery.data?.curriculum ?? []}
+            refresh={() =>
+              queryClient.invalidateQueries({
+                queryKey: ["curriculum", selectedYearId, selectedLevelId],
+              })
+            }
+          />
+        </TabsContent>
+        <TabsContent value="assessment" className="mt-4">
+          <AssessmentPanel
+            canManage={canManage && isDraft}
+            yearId={selectedYearId}
+            scheme={schemeQuery.data?.scheme ?? null}
+            refresh={() =>
+              queryClient.invalidateQueries({ queryKey: ["assessment-scheme", selectedYearId] })
+            }
+          />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
 
-      {/* ── MODAL DIALOGS ────────────────────────────────────── */}
-
-      {/* Academic Year Dialog */}
-      <Dialog open={yearModalOpen} onOpenChange={setYearModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={handleYearSubmit}>
-            <DialogHeader>
-              <DialogTitle>{editingYearId ? "Edit Academic Year" : "New Academic Year"}</DialogTitle>
-              <DialogDescription>
-                Configure the academic year name and active rollover status.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-foreground">Year Name</label>
-                <input
-                  value={yearName}
-                  onChange={(e) => setYearName(e.target.value)}
-                  placeholder="e.g. 2026 / 2027"
-                  required
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
+function YearsPanel({
+  canManage,
+  years,
+  defaultTermCount,
+  invalidate,
+}: {
+  canManage: boolean;
+  years: Awaited<ReturnType<typeof academicApi.getYears>>["years"];
+  defaultTermCount: number;
+  invalidate: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [termCount, setTermCount] = useState(defaultTermCount);
+  const [termDates, setTermDates] = useState<{ startDate: string; endDate: string }[]>(
+    Array.from({ length: defaultTermCount }, () => ({ startDate: "", endDate: "" })),
+  );
+  useEffect(() => {
+    setTermCount(defaultTermCount);
+    setTermDates(Array.from({ length: defaultTermCount }, () => ({ startDate: "", endDate: "" })));
+  }, [defaultTermCount]);
+  const setCount = (count: number) => {
+    setTermCount(count);
+    setTermDates((current) =>
+      Array.from({ length: count }, (_, index) => current[index] ?? { startDate: "", endDate: "" }),
+    );
+  };
+  const mutation = useMutation({
+    mutationFn: () =>
+      academicApi.createYear({ name, startDate, endDate, termCount, terms: termDates }),
+    onSuccess: () => {
+      toast.success("Draft academic year created");
+      setName("");
+      invalidate();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const settingsMutation = useMutation({
+    mutationFn: (count: number) => academicApi.updateSettings({ defaultTermCount: count }),
+    onSuccess: () => {
+      toast.success("Default term count updated");
+      queryClient.invalidateQueries({ queryKey: ["academic-settings"] });
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const actionMutation = useMutation({
+    mutationFn: async ({
+      type,
+      id,
+      termStatus,
+    }: {
+      type: string;
+      id: string;
+      termStatus?: "ACTIVE" | "CLOSED";
+    }) => {
+      if (type === "activate") await academicApi.activateYear(id);
+      else if (type === "close") await academicApi.closeYear(id);
+      else await academicApi.transitionTerm(id, termStatus!);
+    },
+    onSuccess: () => {
+      toast.success("Academic lifecycle updated");
+      invalidate();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const copyMutation = useMutation({
+    mutationFn: ({ targetYearId, sourceYearId }: { targetYearId: string; sourceYearId: string }) =>
+      academicApi.copyYearStructure(targetYearId, { sourceYearId }),
+    onSuccess: () => {
+      toast.success("Sections, curriculum and assessment scheme copied");
+      invalidate();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  return (
+    <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h3 className="font-semibold">Create draft year</h3>
+        <div className="mt-4 space-y-3">
+          <Input
+            placeholder="2027 / 2028"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            disabled={!canManage}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              disabled={!canManage}
+            />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              disabled={!canManage}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Terms in this year</label>
+            <select
+              className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
+              value={termCount}
+              onChange={(event) => setCount(Number(event.target.value))}
+              disabled={!canManage}
+            >
+              {[1, 2, 3, 4].map((count) => (
+                <option key={count}>{count}</option>
+              ))}
+            </select>
+          </div>
+          {termDates.map((term, index) => (
+            <div key={index} className="rounded-lg border p-3">
+              <div className="mb-2 text-xs font-semibold">Term {index + 1}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  type="date"
+                  value={term.startDate}
+                  onChange={(event) =>
+                    setTermDates((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, startDate: event.target.value } : item,
+                      ),
+                    )
+                  }
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-foreground">Start Date</label>
-                  <input
-                    type="date"
-                    value={yearStartDate}
-                    onChange={(e) => setYearStartDate(e.target.value)}
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-foreground">End Date</label>
-                  <input
-                    type="date"
-                    value={yearEndDate}
-                    onChange={(e) => setYearEndDate(e.target.value)}
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="yearActive"
-                  checked={yearActive}
-                  onChange={(e) => setYearActive(e.target.checked)}
-                  className="rounded border-input text-brand focus:ring-brand"
+                <Input
+                  type="date"
+                  value={term.endDate}
+                  onChange={(event) =>
+                    setTermDates((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, endDate: event.target.value } : item,
+                      ),
+                    )
+                  }
                 />
-                <label htmlFor="yearActive" className="text-xs font-medium text-foreground select-none">
-                  Mark as Active Year
-                </label>
               </div>
             </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setYearModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                {editingYearId ? "Save Changes" : "Create Academic Year"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Term Dialog */}
-      <Dialog open={termModalOpen} onOpenChange={setTermModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={handleTermSubmit}>
-            <DialogHeader>
-              <DialogTitle>Edit Term</DialogTitle>
-              <DialogDescription>
-                Configure the term's date ranges and rollover status.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-foreground">Term Name</label>
-                <input
-                  value={termName}
-                  onChange={(e) => setTermName(e.target.value)}
-                  required
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-foreground">Start Date</label>
-                  <input
-                    type="date"
-                    value={termStartDate}
-                    onChange={(e) => setTermStartDate(e.target.value)}
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
+          ))}
+          <Button
+            className="w-full"
+            onClick={() => mutation.mutate()}
+            disabled={
+              !canManage ||
+              mutation.isPending ||
+              !name ||
+              !startDate ||
+              !endDate ||
+              termDates.some((term) => !term.startDate || !term.endDate)
+            }
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Create draft
+          </Button>
+        </div>
+        <div className="mt-6 border-t pt-4">
+          <label className="text-xs font-medium">Default terms for future years</label>
+          <div className="mt-2 flex gap-2">
+            <select
+              className="h-9 flex-1 rounded-md border bg-background px-2"
+              value={defaultTermCount}
+              onChange={(event) => settingsMutation.mutate(Number(event.target.value))}
+              disabled={!canManage}
+            >
+              {[1, 2, 3, 4].map((count) => (
+                <option key={count}>{count}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+      <section className="space-y-3">
+        {years.map((year) => {
+          const copySource =
+            years.find((candidate) => candidate.id !== year.id && candidate.status !== "DRAFT") ??
+            years.find((candidate) => candidate.id !== year.id);
+          return (
+            <div key={year.id} className="rounded-xl border border-border bg-card p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold">{year.name}</h3>
+                    <Badge className={statusTone(year.status)}>{year.status}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {year.startDate.slice(0, 10)} → {year.endDate.slice(0, 10)} · {year.termCount}{" "}
+                    terms
+                  </p>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-foreground">End Date</label>
-                  <input
-                    type="date"
-                    value={termEndDate}
-                    onChange={(e) => setTermEndDate(e.target.value)}
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="termActive"
-                  checked={termActive}
-                  onChange={(e) => setTermActive(e.target.checked)}
-                  className="rounded border-input text-brand focus:ring-brand"
-                />
-                <label htmlFor="termActive" className="text-xs font-medium text-foreground select-none">
-                  Mark as Active Term
-                </label>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setTermModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Classroom Dialog */}
-      <Dialog open={classModalOpen} onOpenChange={setClassModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={handleClassSubmit}>
-            <DialogHeader>
-              <DialogTitle>{editingClassId ? "Edit Classroom" : "New Classroom"}</DialogTitle>
-              <DialogDescription>
-                Define the name, grading level order, student capacity, and class teacher.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-foreground">Class Name</label>
-                <input
-                  value={className}
-                  onChange={(e) => setClassName(e.target.value)}
-                  placeholder="e.g. Primary 1"
-                  required
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-foreground">Progression Level</label>
-                  <input
-                    type="number"
-                    value={classLevel}
-                    onChange={(e) => setClassLevel(Number(e.target.value))}
-                    min={1}
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-foreground">Capacity</label>
-                  <input
-                    type="number"
-                    value={classCapacity}
-                    onChange={(e) => setClassCapacity(Number(e.target.value))}
-                    min={1}
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-foreground">Class Teacher</label>
-                <select
-                  value={classTeacherId}
-                  onChange={(e) => setClassTeacherId(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring"
-                >
-                  <option value="">Unassigned</option>
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.staffNo})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setClassModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                {editingClassId ? "Save Changes" : "Create Classroom"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Subject Dialog */}
-      <Dialog open={subjectModalOpen} onOpenChange={setSubjectModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={handleSubjectSubmit}>
-            <DialogHeader>
-              <DialogTitle>{editingSubjectId ? "Edit Subject" : "New Subject"}</DialogTitle>
-              <DialogDescription>
-                Provide the subject name, course code, and assign teacher rosters.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-1">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2 space-y-2">
-                  <label className="text-xs font-medium text-foreground">Subject Name</label>
-                  <input
-                    value={subjectName}
-                    onChange={(e) => setSubjectName(e.target.value)}
-                    placeholder="e.g. Mathematics"
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-foreground">Code</label>
-                  <input
-                    value={subjectCode}
-                    onChange={(e) => setSubjectCode(e.target.value)}
-                    placeholder="e.g. MTH"
-                    required
-                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none focus:border-ring"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-foreground">Assign Teachers</label>
-                <div className="rounded-lg border border-border bg-card p-3 space-y-2 max-h-40 overflow-y-auto">
-                  {teachers.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No teachers registered.</p>
-                  ) : (
-                    teachers.map((t) => (
-                      <div key={t.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id={`tcheck-${t.id}`}
-                          checked={selectedTeacherIds.includes(t.id)}
-                          onChange={(e) => handleTeacherCheckboxChange(t.id, e.target.checked)}
-                          className="rounded border-input text-brand focus:ring-brand"
-                        />
-                        <label htmlFor={`tcheck-${t.id}`} className="text-xs text-foreground select-none cursor-pointer">
-                          {t.name} ({t.staffNo})
-                        </label>
-                      </div>
-                    ))
+                <div className="flex gap-2">
+                  {year.status === "DRAFT" && copySource && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        copyMutation.mutate({ targetYearId: year.id, sourceYearId: copySource.id })
+                      }
+                      disabled={!canManage}
+                    >
+                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      Copy {copySource.name}
+                    </Button>
+                  )}
+                  {year.status === "DRAFT" && (
+                    <Button
+                      size="sm"
+                      onClick={() => actionMutation.mutate({ type: "activate", id: year.id })}
+                      disabled={!canManage}
+                    >
+                      Activate
+                    </Button>
+                  )}
+                  {year.status === "ACTIVE" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => actionMutation.mutate({ type: "close", id: year.id })}
+                      disabled={!canManage}
+                    >
+                      Close year
+                    </Button>
                   )}
                 </div>
               </div>
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSubjectModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                {editingSubjectId ? "Save Changes" : "Create Subject"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Class Subjects Dialog */}
-      <Dialog open={classSubjectsModalOpen} onOpenChange={setClassSubjectsModalOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Manage Subjects</DialogTitle>
-            <DialogDescription>
-              Assign subjects and teachers to {classrooms.find(c => c.id === manageSubjectsClassId)?.name}.
-            </DialogDescription>
-          </DialogHeader>
-
-          {loadingClassSubjects ? (
-            <div className="py-10 text-center">Loading subjects...</div>
-          ) : (
-            <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
-              <div className="space-y-4">
-                {draftClassSubjects.map((ds, index) => {
-                  const subjectOpts = subjects.filter(s => !draftClassSubjects.some(d => d.subjectId === s.id && d !== ds));
-                  const currentSub = subjects.find(s => s.id === ds.subjectId);
-                  const teacherOpts = currentSub ? currentSub.teachers : teachers;
-
-                  return (
-                    <div key={index} className="flex gap-2 items-start border border-border bg-muted/20 p-3 rounded-lg">
-                      <div className="flex-1 space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium">Subject</label>
-                            <select
-                              value={ds.subjectId}
-                              onChange={e => {
-                                const newDrafts = [...draftClassSubjects];
-                                newDrafts[index].subjectId = e.target.value;
-                                newDrafts[index].teacherId = "";
-                                setDraftClassSubjects(newDrafts);
-                              }}
-                              className="w-full text-sm border border-input bg-card rounded-md h-9 px-2 outline-none"
-                            >
-                              <option value="">Select subject...</option>
-                              {subjectOpts.map(s => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium">Teacher</label>
-                            <select
-                              value={ds.teacherId}
-                              onChange={e => {
-                                const newDrafts = [...draftClassSubjects];
-                                newDrafts[index].teacherId = e.target.value;
-                                setDraftClassSubjects(newDrafts);
-                              }}
-                              className="w-full text-sm border border-input bg-card rounded-md h-9 px-2 outline-none"
-                              disabled={!ds.subjectId}
-                            >
-                              <option value="">Unassigned</option>
-                              {teacherOpts.map(t => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium">Pass Mark</label>
-                            <input
-                              type="number"
-                              min="0" max="100"
-                              value={ds.passMark}
-                              onChange={e => {
-                                const newDrafts = [...draftClassSubjects];
-                                newDrafts[index].passMark = Number(e.target.value);
-                                setDraftClassSubjects(newDrafts);
-                              }}
-                              className="w-full text-sm border border-input bg-card rounded-md h-9 px-2 outline-none"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium">Credit Weight</label>
-                            <input
-                              type="number"
-                              min="0" step="0.5"
-                              value={ds.weight}
-                              onChange={e => {
-                                const newDrafts = [...draftClassSubjects];
-                                newDrafts[index].weight = Number(e.target.value);
-                                setDraftClassSubjects(newDrafts);
-                              }}
-                              className="w-full text-sm border border-input bg-card rounded-md h-9 px-2 outline-none"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 w-9 mt-5"
-                        onClick={() => {
-                          const newDrafts = [...draftClassSubjects];
-                          newDrafts.splice(index, 1);
-                          setDraftClassSubjects(newDrafts);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+              <div className="mt-4 grid gap-2 md:grid-cols-3">
+                {year.terms.map((term) => (
+                  <div key={term.id} className="rounded-lg bg-muted/35 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{term.name}</span>
+                      <Badge variant="outline">{term.status}</Badge>
                     </div>
-                  );
-                })}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {term.startDate.slice(0, 10)} → {term.endDate.slice(0, 10)}
+                    </p>
+                    {year.status === "ACTIVE" && (
+                      <div className="mt-2">
+                        {term.status === "ACTIVE" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              actionMutation.mutate({
+                                type: "term",
+                                id: term.id,
+                                termStatus: "CLOSED",
+                              })
+                            }
+                            disabled={!canManage}
+                          >
+                            Close term
+                          </Button>
+                        )}
+                        {term.status === "PENDING" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              actionMutation.mutate({
+                                type: "term",
+                                id: term.id,
+                                termStatus: "ACTIVE",
+                              })
+                            }
+                            disabled={!canManage}
+                          >
+                            Activate
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
 
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full border-dashed"
-                onClick={() => {
-                  setDraftClassSubjects([
-                    ...draftClassSubjects,
-                    { subjectId: "", teacherId: "", passMark: 50, weight: 1 }
-                  ]);
-                }}
+function LevelsPanel({
+  canManage,
+  levels,
+  refresh,
+}: {
+  canManage: boolean;
+  levels: Awaited<ReturnType<typeof academicApi.getGradeLevels>>["gradeLevels"];
+  refresh: () => void;
+}) {
+  const [form, setForm] = useState({ name: "", code: "", order: levels.length + 1 });
+  const createMutation = useMutation({
+    mutationFn: () =>
+      academicApi.createGradeLevel({ ...form, nextGradeLevelId: null, isFinal: false }),
+    onSuccess: () => {
+      toast.success("Grade level created");
+      setForm({ name: "", code: "", order: levels.length + 2 });
+      refresh();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: { nextGradeLevelId?: string | null; isFinal?: boolean };
+    }) => academicApi.updateGradeLevel(id, data),
+    onSuccess: refresh,
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  return (
+    <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+      <section className="rounded-xl border bg-card p-5">
+        <h3 className="font-semibold">New grade level</h3>
+        <div className="mt-4 space-y-3">
+          <Input
+            placeholder="Grade name"
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+          />
+          <Input
+            placeholder="Code"
+            value={form.code}
+            onChange={(event) => setForm({ ...form, code: event.target.value })}
+          />
+          <Input
+            type="number"
+            min={1}
+            value={form.order}
+            onChange={(event) => setForm({ ...form, order: Number(event.target.value) })}
+          />
+          <Button
+            className="w-full"
+            disabled={!canManage || !form.name || !form.code}
+            onClick={() => createMutation.mutate()}
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add level
+          </Button>
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-xl border bg-card">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="px-4 py-3 text-left">Order</th>
+              <th className="px-4 py-3 text-left">Level</th>
+              <th className="px-4 py-3 text-left">Next level</th>
+              <th className="px-4 py-3 text-center">Final</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {levels.map((level) => (
+              <tr key={level.id}>
+                <td className="px-4 py-3">{level.order}</td>
+                <td className="px-4 py-3 font-medium">
+                  {level.name} <span className="text-xs text-muted-foreground">({level.code})</span>
+                </td>
+                <td className="px-4 py-3">
+                  <select
+                    className="h-8 rounded border bg-background px-2"
+                    value={level.nextGradeLevelId ?? ""}
+                    disabled={!canManage || level.isFinal}
+                    onChange={(event) =>
+                      updateMutation.mutate({
+                        id: level.id,
+                        data: { nextGradeLevelId: event.target.value || null },
+                      })
+                    }
+                  >
+                    <option value="">None</option>
+                    {levels
+                      .filter((item) => item.id !== level.id)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </select>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <input
+                    type="checkbox"
+                    checked={level.isFinal}
+                    disabled={!canManage}
+                    onChange={(event) =>
+                      updateMutation.mutate({
+                        id: level.id,
+                        data: {
+                          isFinal: event.target.checked,
+                          nextGradeLevelId: event.target.checked ? null : level.nextGradeLevelId,
+                        },
+                      })
+                    }
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+function SectionsPanel({
+  canManage,
+  canAssign,
+  yearId,
+  sections,
+  levels,
+  teachers,
+  refresh,
+}: {
+  canManage: boolean;
+  canAssign: boolean;
+  yearId: string;
+  sections: Awaited<ReturnType<typeof academicApi.getClasses>>["sections"];
+  levels: Awaited<ReturnType<typeof academicApi.getGradeLevels>>["gradeLevels"];
+  teachers: { id: string; name: string }[];
+  refresh: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: "",
+    gradeLevelId: "",
+    capacity: 35,
+    classTeacherId: "",
+  });
+  useEffect(() => {
+    if (!form.gradeLevelId && levels.length)
+      setForm((value) => ({ ...value, gradeLevelId: levels[0].id }));
+  }, [levels, form.gradeLevelId]);
+  const mutation = useMutation({
+    mutationFn: () =>
+      academicApi.createClass({
+        academicYearId: yearId,
+        ...form,
+        classTeacherId: form.classTeacherId || null,
+      }),
+    onSuccess: () => {
+      toast.success("Class stream created");
+      setForm((value) => ({ ...value, name: "" }));
+      refresh();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const assignmentMutation = useMutation({
+    mutationFn: ({ id, classTeacherId }: { id: string; classTeacherId: string | null }) =>
+      academicApi.updateClass(id, { classTeacherId }),
+    onSuccess: () => {
+      toast.success("Class teacher updated");
+      refresh();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  return (
+    <div className="space-y-4">
+      <section className="rounded-xl border bg-card p-4">
+        <div className="grid gap-3 md:grid-cols-5">
+          <Input
+            placeholder="e.g. Basic 1 A"
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+          />
+          <select
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+            value={form.gradeLevelId}
+            onChange={(event) => setForm({ ...form, gradeLevelId: event.target.value })}
+          >
+            {levels
+              .filter((level) => level.active)
+              .map((level) => (
+                <option key={level.id} value={level.id}>
+                  {level.name}
+                </option>
+              ))}
+          </select>
+          <Input
+            type="number"
+            min={1}
+            value={form.capacity}
+            onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })}
+          />
+          <select
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+            value={form.classTeacherId}
+            onChange={(event) => setForm({ ...form, classTeacherId: event.target.value })}
+          >
+            <option value="">Unassigned teacher</option>
+            {teachers.map((teacher) => (
+              <option key={teacher.id} value={teacher.id}>
+                {teacher.name}
+              </option>
+            ))}
+          </select>
+          <Button disabled={!canManage || !yearId || !form.name} onClick={() => mutation.mutate()}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add stream
+          </Button>
+        </div>
+      </section>
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {sections.map((section) => (
+          <div key={section.id} className="rounded-xl border bg-card p-4">
+            <div className="flex justify-between">
+              <div>
+                <h3 className="font-semibold">{section.name}</h3>
+                <p className="text-xs text-muted-foreground">{section.gradeLevelName}</p>
+              </div>
+              <Badge variant="outline">
+                {section.studentCount}/{section.capacity}
+              </Badge>
+            </div>
+            <label className="mt-3 block space-y-1 text-xs font-medium">
+              Class teacher
+              <select
+                aria-label={`Class teacher for ${section.name}`}
+                value={section.teacherId ?? ""}
+                disabled={!canAssign || assignmentMutation.isPending}
+                onChange={(event) =>
+                  assignmentMutation.mutate({
+                    id: section.id,
+                    classTeacherId: event.target.value || null,
+                  })
+                }
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
               >
-                <Plus className="mr-2 h-4 w-4" /> Add Subject to Class
+                <option value="">Unassigned teacher</option>
+                {teachers.map((teacher) => (
+                  <option key={teacher.id} value={teacher.id}>
+                    {teacher.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function SubjectsPanel({
+  canManage,
+  subjects,
+  refresh,
+}: {
+  canManage: boolean;
+  subjects: Awaited<ReturnType<typeof academicApi.getSubjects>>["subjects"];
+  refresh: () => void;
+}) {
+  const [form, setForm] = useState({ name: "", code: "", description: "" });
+  const createMutation = useMutation({
+    mutationFn: () => academicApi.createSubject(form),
+    onSuccess: () => {
+      toast.success("Subject created");
+      setForm({ name: "", code: "", description: "" });
+      refresh();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const archiveMutation = useMutation({
+    mutationFn: academicApi.deleteSubject,
+    onSuccess: () => {
+      toast.success("Subject archived");
+      refresh();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  return (
+    <div className="space-y-4">
+      <section className="grid gap-3 rounded-xl border bg-card p-4 md:grid-cols-[1fr_160px_1fr_auto]">
+        <Input
+          placeholder="Subject name"
+          value={form.name}
+          onChange={(event) => setForm({ ...form, name: event.target.value })}
+        />
+        <Input
+          placeholder="Code"
+          value={form.code}
+          onChange={(event) => setForm({ ...form, code: event.target.value })}
+        />
+        <Input
+          placeholder="Description (optional)"
+          value={form.description}
+          onChange={(event) => setForm({ ...form, description: event.target.value })}
+        />
+        <Button
+          disabled={!canManage || !form.name || !form.code}
+          onClick={() => createMutation.mutate()}
+        >
+          <Plus className="mr-1.5 h-4 w-4" />
+          Add
+        </Button>
+      </section>
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {subjects.map((subject) => (
+          <div key={subject.id} className="rounded-xl border bg-card p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-semibold">{subject.name}</h3>
+                <p className="text-xs text-muted-foreground">{subject.code}</p>
+              </div>
+              <Badge variant="outline">{subject.active ? "Active" : "Archived"}</Badge>
+            </div>
+            {subject.description && (
+              <p className="mt-2 text-xs text-muted-foreground">{subject.description}</p>
+            )}
+            {subject.active && (
+              <Button
+                className="mt-3"
+                size="sm"
+                variant="ghost"
+                disabled={!canManage}
+                onClick={() => archiveMutation.mutate(subject.id)}
+              >
+                Archive
+              </Button>
+            )}
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function CurriculumPanel({
+  canManage,
+  yearId,
+  levelId,
+  setLevelId,
+  levels,
+  subjects,
+  current,
+  refresh,
+}: {
+  canManage: boolean;
+  yearId: string;
+  levelId: string;
+  setLevelId: (id: string) => void;
+  levels: Awaited<ReturnType<typeof academicApi.getGradeLevels>>["gradeLevels"];
+  subjects: Awaited<ReturnType<typeof academicApi.getSubjects>>["subjects"];
+  current: { subjectId: string; passMark: number; sortOrder: number }[];
+  refresh: () => void;
+}) {
+  const [selected, setSelected] = useState<Record<string, { passMark: number; sortOrder: number }>>(
+    {},
+  );
+  useEffect(() => {
+    setSelected(
+      Object.fromEntries(
+        current.map((item) => [
+          item.subjectId,
+          { passMark: item.passMark, sortOrder: item.sortOrder },
+        ]),
+      ),
+    );
+  }, [current]);
+  const mutation = useMutation({
+    mutationFn: () =>
+      academicApi.saveCurriculum(
+        yearId,
+        levelId,
+        Object.entries(selected).map(([subjectId, value]) => ({ subjectId, ...value })),
+      ),
+    onSuccess: () => {
+      toast.success("Curriculum saved");
+      refresh();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  return (
+    <section className="rounded-xl border bg-card p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <label className="text-xs text-muted-foreground">Grade level</label>
+          <select
+            className="mt-1 h-9 min-w-52 rounded-md border bg-background px-2"
+            value={levelId}
+            onChange={(event) => setLevelId(event.target.value)}
+          >
+            {levels.map((level) => (
+              <option key={level.id} value={level.id}>
+                {level.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button disabled={!canManage} onClick={() => mutation.mutate()}>
+          <Save className="mr-1.5 h-4 w-4" />
+          Save curriculum
+        </Button>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {subjects
+          .filter((subject) => subject.active)
+          .map((subject, index) => {
+            const value = selected[subject.id];
+            return (
+              <label
+                key={subject.id}
+                className={`rounded-lg border p-3 ${value ? "border-brand bg-brand/5" : ""}`}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!value}
+                    disabled={!canManage}
+                    onChange={(event) =>
+                      setSelected((state) => {
+                        const next = { ...state };
+                        if (event.target.checked)
+                          next[subject.id] = { passMark: 50, sortOrder: index + 1 };
+                        else delete next[subject.id];
+                        return next;
+                      })
+                    }
+                  />
+                  <span className="text-sm font-medium">{subject.name}</span>
+                </div>
+                {value && (
+                  <div className="mt-2 flex items-center gap-2 text-xs">
+                    Pass mark{" "}
+                    <Input
+                      className="h-7 w-20"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={value.passMark}
+                      onChange={(event) =>
+                        setSelected((state) => ({
+                          ...state,
+                          [subject.id]: { ...value, passMark: Number(event.target.value) },
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+              </label>
+            );
+          })}
+      </div>
+    </section>
+  );
+}
+
+const defaultScheme: Omit<ApiAssessmentScheme, "id" | "locked"> = {
+  name: "40/60 Standard Assessment",
+  components: [
+    { name: "Class Score", code: "CLASS_SCORE", maxScore: 40, sequence: 1 },
+    { name: "Exam", code: "EXAM", maxScore: 60, sequence: 2 },
+  ],
+  gradeBands: [
+    { minScore: 80, maxScore: 100, grade: "A", remark: "Excellent" },
+    { minScore: 70, maxScore: 79.99, grade: "B", remark: "Very Good" },
+    { minScore: 60, maxScore: 69.99, grade: "C", remark: "Good" },
+    { minScore: 50, maxScore: 59.99, grade: "D", remark: "Pass" },
+    { minScore: 0, maxScore: 49.99, grade: "F", remark: "Needs Improvement" },
+  ],
+};
+
+function AssessmentPanel({
+  canManage,
+  yearId,
+  scheme,
+  refresh,
+}: {
+  canManage: boolean;
+  yearId: string;
+  scheme: ApiAssessmentScheme | null;
+  refresh: () => void;
+}) {
+  const [draft, setDraft] = useState(defaultScheme);
+  useEffect(() => {
+    if (scheme)
+      setDraft({
+        name: scheme.name,
+        components: scheme.components.map(({ name, code, maxScore, sequence }) => ({
+          name,
+          code,
+          maxScore,
+          sequence,
+        })),
+        gradeBands: scheme.gradeBands.map(({ minScore, maxScore, grade, remark }) => ({
+          minScore,
+          maxScore,
+          grade,
+          remark,
+        })),
+      });
+  }, [scheme]);
+  const mutation = useMutation({
+    mutationFn: () => academicApi.saveAssessmentScheme(yearId, draft),
+    onSuccess: () => {
+      toast.success("Assessment scheme saved");
+      refresh();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const total = draft.components.reduce((sum, component) => sum + component.maxScore, 0);
+  const addComponent = () =>
+    setDraft((current) => ({
+      ...current,
+      components: [
+        ...current.components,
+        {
+          name: "New component",
+          code: `COMP_${current.components.length + 1}`,
+          maxScore: 0,
+          sequence: current.components.length + 1,
+        },
+      ],
+    }));
+  const removeComponent = (index: number) =>
+    setDraft((current) => ({
+      ...current,
+      components: current.components
+        .filter((_, itemIndex) => itemIndex !== index)
+        .map((item, itemIndex) => ({ ...item, sequence: itemIndex + 1 })),
+    }));
+  const addBand = () =>
+    setDraft((current) => ({
+      ...current,
+      gradeBands: [...current.gradeBands, { minScore: 0, maxScore: 0, grade: "", remark: "" }],
+    }));
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <section className="rounded-xl border bg-card p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold">Assessment components</h3>
+            <p className="text-xs text-muted-foreground">Maximum scores must total 100.</p>
+          </div>
+          <Badge
+            className={
+              total === 100
+                ? "bg-success/15 text-[oklch(0.35_0.1_155)]"
+                : "bg-destructive/10 text-destructive"
+            }
+          >
+            {total}/100
+          </Badge>
+        </div>
+        <div className="mt-4 space-y-2">
+          {draft.components.map((component, index) => (
+            <div
+              key={`${component.code}-${index}`}
+              className="grid grid-cols-[1fr_100px_auto] gap-2"
+            >
+              <Input
+                value={component.name}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    components: draft.components.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? {
+                            ...item,
+                            name: event.target.value,
+                            code: event.target.value.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
+                          }
+                        : item,
+                    ),
+                  })
+                }
+              />
+              <Input
+                type="number"
+                value={component.maxScore}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    components: draft.components.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, maxScore: Number(event.target.value) }
+                        : item,
+                    ),
+                  })
+                }
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!canManage || draft.components.length === 1}
+                onClick={() => removeComponent(index)}
+              >
+                Remove
               </Button>
             </div>
-          )}
-
-          <DialogFooter className="mt-2">
-            <Button variant="outline" onClick={() => setClassSubjectsModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                // Validate
-                if (draftClassSubjects.some(d => !d.subjectId)) {
-                  toast.error("Please select a subject for all rows");
-                  return;
-                }
-                saveClassSubjectsMutation.mutate({
-                  classId: manageSubjectsClassId!,
-                  data: {
-                    subjects: draftClassSubjects.map(d => ({
-                      subjectId: d.subjectId,
-                      teacherId: d.teacherId || null,
-                      passMark: d.passMark,
-                      weight: d.weight,
-                    }))
-                  }
-                });
-              }}
-              disabled={loadingClassSubjects || saveClassSubjectsMutation.isPending}
+          ))}
+        </div>
+        <Button
+          className="mt-3"
+          size="sm"
+          variant="outline"
+          disabled={!canManage || draft.components.length >= 6}
+          onClick={addComponent}
+        >
+          <Plus className="mr-1.5 h-4 w-4" />
+          Add component
+        </Button>
+      </section>
+      <section className="rounded-xl border bg-card p-5">
+        <h3 className="font-semibold">Grade bands</h3>
+        <div className="mt-4 space-y-2">
+          {draft.gradeBands.map((band, index) => (
+            <div
+              key={`${band.grade}-${index}`}
+              className="grid grid-cols-[65px_65px_60px_1fr_auto] gap-2"
             >
-              {saveClassSubjectsMutation.isPending ? "Saving..." : "Save Subjects"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <Input
+                type="number"
+                value={band.minScore}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    gradeBands: draft.gradeBands.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, minScore: Number(event.target.value) }
+                        : item,
+                    ),
+                  })
+                }
+              />
+              <Input
+                type="number"
+                value={band.maxScore}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    gradeBands: draft.gradeBands.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, maxScore: Number(event.target.value) }
+                        : item,
+                    ),
+                  })
+                }
+              />
+              <Input
+                value={band.grade}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    gradeBands: draft.gradeBands.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, grade: event.target.value } : item,
+                    ),
+                  })
+                }
+              />
+              <Input
+                value={band.remark}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    gradeBands: draft.gradeBands.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, remark: event.target.value } : item,
+                    ),
+                  })
+                }
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!canManage || draft.gradeBands.length === 1}
+                onClick={() =>
+                  setDraft((current) => ({
+                    ...current,
+                    gradeBands: current.gradeBands.filter((_, itemIndex) => itemIndex !== index),
+                  }))
+                }
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <Button variant="outline" size="sm" disabled={!canManage} onClick={addBand}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add band
+          </Button>
+          <Button
+            className="ml-auto"
+            disabled={!canManage || total !== 100 || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            <Save className="mr-1.5 h-4 w-4" />
+            Save scheme
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }

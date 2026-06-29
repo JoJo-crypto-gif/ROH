@@ -1,385 +1,855 @@
-import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
+import {
+  PrismaClient,
+  AcademicYearStatus,
+  TermStatus,
+  EnrollmentStatus,
+  SchoolStaffCategory,
+} from "@prisma/client";
 import bcrypt from "bcrypt";
+import { ALL_PERMISSIONS } from "../src/lib/permissions.js";
+import { recordPayment } from "../src/modules/finance/finance.service.js";
+import {
+  activateAccounting,
+  bootstrapAccounting,
+  createExpense,
+  decideExpense,
+  listMoneyAccounts,
+  payExpense,
+  submitExpense,
+} from "../src/modules/accounting/accounting.service.js";
 
 const prisma = new PrismaClient();
 
-// ── All permissions (must match client/src/lib/rbac.ts) ──
-const ALL_PERMISSIONS = [
-  "dashboard.view",
-  "students.view", "students.create", "students.update", "students.delete",
-  "staff.view", "staff.create", "staff.update", "staff.delete",
-  "academic.view", "academic.manage",
-  "attendance.view", "attendance.mark",
-  "fees.view", "fees.manage",
-  "payments.view", "payments.record",
-  "receipts.view", "receipts.print",
-  "debtors.view",
-  "promotion.view", "promotion.recommend", "promotion.approve",
-  "reports.view",
-  "users.manage", "roles.manage",
-  "ngo.view", "accounting.view", "inventory.view",
-];
-
-// ── Built-in roles ───────────────────────────────────────
-const BUILT_IN_ROLES = [
+const roleDefinitions = [
   {
-    slug: "super-admin",
     name: "Super Admin",
-    description: "Full access across all modules and departments.",
-    permissions: ALL_PERMISSIONS,
+    slug: "super-admin",
+    description: "Full platform access.",
+    permissions: [...ALL_PERMISSIONS],
   },
   {
-    slug: "school-admin",
     name: "School Admin",
-    description: "Manages all school operations.",
+    slug: "school-admin",
+    description: "Full school operations access.",
     permissions: ALL_PERMISSIONS.filter(
-      (p) => !p.startsWith("ngo") && !p.startsWith("accounting") && !p.startsWith("inventory"),
+      (p) => !p.startsWith("ngo") && !p.startsWith("inventory"),
     ),
   },
   {
-    slug: "headteacher",
     name: "Headteacher",
-    description: "Academic leadership, promotions, reports.",
+    slug: "principal",
+    description: "Academic leadership and oversight.",
     permissions: [
-      "dashboard.view", "students.view", "students.update", "staff.view",
-      "academic.view", "academic.manage", "attendance.view", "attendance.mark",
-      "fees.view", "payments.view", "debtors.view",
-      "promotion.view", "promotion.recommend", "promotion.approve", "reports.view",
+      "dashboard.view",
+      "students.view",
+      "students.update",
+      "staff.view",
+      "academic.view",
+      "academic.manage",
+      "attendance.view",
+      "attendance.mark",
+      "gradebook.view",
+      "gradebook.edit",
+      "reports.view",
+      "reports.publish",
+      "reports.reissue",
+      "promotion.view",
+      "promotion.recommend",
+      "promotion.approve",
     ],
   },
   {
-    slug: "teacher",
     name: "Teacher",
-    description: "Class attendance and student view (scoped to assigned class).",
+    slug: "teacher",
+    description: "Assigned-section academic workflow.",
     permissions: [
-      "dashboard.view", "students.view", "attendance.view", "attendance.mark",
-      "promotion.view", "promotion.recommend",
+      "dashboard.view",
+      "students.view",
+      "academic.view",
+      "attendance.view",
+      "attendance.mark",
+      "gradebook.view",
+      "gradebook.edit",
+      "reports.view",
+      "reports.publish",
+      "reports.reissue",
+      "promotion.view",
+      "promotion.recommend",
     ],
   },
   {
+    name: "Bursar",
     slug: "bursar",
-    name: "Bursar / Accountant",
-    description: "Fees, payments, receipts, debtors and reports.",
+    description: "Fees and school finance.",
     permissions: [
-      "dashboard.view", "students.view", "fees.view", "fees.manage",
-      "payments.view", "payments.record", "receipts.view", "receipts.print",
-      "debtors.view", "reports.view",
+      "dashboard.view",
+      "students.view",
+      "fees.view",
+      "fees.manage",
+      "fees.adjust",
+      "credits.allocate",
+      "payments.view",
+      "payments.record",
+      "payments.reverse",
+      "receipts.view",
+      "receipts.print",
+      "debtors.view",
+      "accounting.view",
+      "journals.create",
+      "expenses.view",
+      "expenses.create",
+      "expenses.pay",
+      "reconciliation.view",
+      "reconciliation.manage",
+      "accounting.reports.view",
+      "reports.view",
     ],
   },
   {
-    slug: "receptionist",
-    name: "Receptionist",
-    description: "Front desk: enrol students, basic lookups.",
-    permissions: ["dashboard.view", "students.view", "students.create", "staff.view"],
+    name: "Admissions Officer",
+    slug: "admissions",
+    description: "Student registration.",
+    permissions: [
+      "dashboard.view",
+      "students.view",
+      "students.create",
+      "students.update",
+      "academic.view",
+    ],
   },
-];
+] as const;
 
-async function main() {
-  console.log("🌱 Seeding database...\n");
-
-  // ── Clean all tables in correct dependency order ─────
-  console.log("🧹 Cleaning old data...");
+async function clearDatabase() {
+  await prisma.financeAuditLog.deleteMany();
+  await prisma.paymentReversal.deleteMany();
+  await prisma.feeReceipt.deleteMany();
+  await prisma.receiptSequence.deleteMany();
+  await prisma.creditAllocation.deleteMany();
+  await prisma.studentCreditLot.deleteMany();
+  await prisma.paymentAllocation.deleteMany();
+  await prisma.feePayment.deleteMany();
+  await prisma.reconciliationMatch.deleteMany();
+  await prisma.bankStatementLine.deleteMany();
+  await prisma.bankStatementImport.deleteMany();
+  await prisma.cashCount.deleteMany();
+  await prisma.expensePayment.deleteMany();
+  await prisma.expenseAttachment.deleteMany();
+  await prisma.expenseLine.deleteMany();
+  await prisma.expense.deleteMany();
+  await prisma.expenseSequence.deleteMany();
+  await prisma.accountingSourceLink.deleteMany();
+  await prisma.journalLine.deleteMany();
+  await prisma.journalEntry.deleteMany();
+  await prisma.journalSequence.deleteMany();
+  await prisma.paymentMethodAccount.deleteMany();
+  await prisma.feeAccountMapping.deleteMany();
+  await prisma.moneyAccount.deleteMany();
+  await prisma.account.deleteMany();
+  await prisma.accountingPeriod.deleteMany();
+  await prisma.accountingFiscalYear.deleteMany();
+  await prisma.accountingAuditLog.deleteMany();
+  await prisma.accountingBook.deleteMany();
+  await prisma.chargeAdjustment.deleteMany();
+  await prisma.studentCharge.deleteMany();
+  await prisma.optionalFeeAssignment.deleteMany();
+  await prisma.feeScheduleLine.deleteMany();
+  await prisma.feeSchedule.deleteMany();
+  await prisma.feeItem.deleteMany();
+  await prisma.academicAuditLog.deleteMany();
   await prisma.promotion.deleteMany();
-  await prisma.studentEnrolment.deleteMany();
-  await prisma.attendance.deleteMany();
-  await prisma.gradeBook.deleteMany();
+  await prisma.reportCardVersion.deleteMany();
   await prisma.termReport.deleteMany();
-  await prisma.classSubject.deleteMany();
-  await prisma.subjectTeacher.deleteMany();
+  await prisma.assessmentScore.deleteMany();
+  await prisma.assessmentResult.deleteMany();
+  await prisma.attendance.deleteMany();
+  await prisma.studentEnrolment.deleteMany();
   await prisma.student.deleteMany();
-  await prisma.classRoom.deleteMany();
-  await prisma.subject.deleteMany();
+  await prisma.curriculumSubject.deleteMany();
+  await prisma.assessmentComponent.deleteMany();
+  await prisma.gradeBand.deleteMany();
+  await prisma.assessmentScheme.deleteMany();
+  await prisma.calendarEvent.deleteMany();
+  await prisma.classSection.deleteMany();
   await prisma.term.deleteMany();
   await prisma.academicYear.deleteMany();
-  await prisma.refreshToken.deleteMany();
+  await prisma.subject.deleteMany();
+  await prisma.gradeLevel.updateMany({ data: { nextGradeLevelId: null } });
+  await prisma.gradeLevel.deleteMany();
+  await prisma.schoolProfile.deleteMany();
+  await prisma.academicSettings.deleteMany();
   await prisma.passwordResetToken.deleteMany();
+  await prisma.refreshToken.deleteMany();
+  await prisma.schoolStaff.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.rolePermission.deleteMany();
+  await prisma.role.deleteMany();
+}
 
-  // ── 1. Create roles ────────────────────────────────────
-  const roleMap: Record<string, string> = {};
-  for (const roleDef of BUILT_IN_ROLES) {
-    const existing = await prisma.role.findUnique({ where: { slug: roleDef.slug } });
-    let roleId = "";
+function termDates(year: number) {
+  return [
+    {
+      name: "Term 1",
+      sequence: 1,
+      startDate: new Date(`${year}-09-01T00:00:00.000Z`),
+      endDate: new Date(`${year}-12-15T00:00:00.000Z`),
+    },
+    {
+      name: "Term 2",
+      sequence: 2,
+      startDate: new Date(`${year + 1}-01-10T00:00:00.000Z`),
+      endDate: new Date(`${year + 1}-04-10T00:00:00.000Z`),
+    },
+    {
+      name: "Term 3",
+      sequence: 3,
+      startDate: new Date(`${year + 1}-05-04T00:00:00.000Z`),
+      endDate: new Date(`${year + 1}-07-24T00:00:00.000Z`),
+    },
+  ];
+}
 
-    if (existing) {
-      roleId = existing.id;
-      // Update permissions for existing built-in roles
-      await prisma.rolePermission.deleteMany({ where: { roleId: existing.id } });
-      await prisma.rolePermission.createMany({
-        data: roleDef.permissions.map((p) => ({ roleId: existing.id, permission: p })),
-      });
-      console.log(`  ✓ Role "${roleDef.name}" updated (${roleDef.permissions.length} permissions)`);
-    } else {
-      const created = await prisma.role.create({
-        data: {
-          name: roleDef.name,
-          slug: roleDef.slug,
-          description: roleDef.description,
-          builtIn: true,
-          permissions: {
-            create: roleDef.permissions.map((p) => ({ permission: p })),
+async function createAssessmentScheme(academicYearId: string) {
+  return prisma.assessmentScheme.create({
+    data: {
+      academicYearId,
+      name: "40/60 Standard Assessment",
+      totalMax: 100,
+      components: {
+        create: [
+          {
+            name: "Class Score",
+            code: "CLASS_SCORE",
+            maxScore: 40,
+            sequence: 1,
           },
+          { name: "Exam", code: "EXAM", maxScore: 60, sequence: 2 },
+        ],
+      },
+      gradeBands: {
+        create: [
+          { minScore: 80, maxScore: 100, grade: "A", remark: "Excellent" },
+          { minScore: 70, maxScore: 79.99, grade: "B", remark: "Very Good" },
+          { minScore: 60, maxScore: 69.99, grade: "C", remark: "Good" },
+          { minScore: 50, maxScore: 59.99, grade: "D", remark: "Pass" },
+          {
+            minScore: 0,
+            maxScore: 49.99,
+            grade: "F",
+            remark: "Needs Improvement",
+          },
+        ],
+      },
+    },
+  });
+}
+
+async function main() {
+  console.log("Resetting and seeding Lumen academic foundation…");
+  await clearDatabase();
+
+  const roles = new Map<string, { id: string }>();
+  for (const definition of roleDefinitions) {
+    const role = await prisma.role.create({
+      data: {
+        name: definition.name,
+        slug: definition.slug,
+        description: definition.description,
+        builtIn: true,
+        permissions: {
+          create: definition.permissions.map((permission) => ({ permission })),
         },
-      });
-      roleId = created.id;
-      console.log(`  ✓ Role "${roleDef.name}" created (${roleDef.permissions.length} permissions)`);
-    }
-    roleMap[roleDef.slug] = roleId;
+      },
+    });
+    roles.set(definition.slug, role);
   }
 
-  // ── 2. Create academic years and terms ─────────────────
-  console.log("\n  ⚙ Seeding Academic Years & Terms...");
+  const passwordHash = await bcrypt.hash("admin123", 12);
+  const users = await Promise.all([
+    prisma.user.create({
+      data: {
+        name: "Super Admin",
+        email: "admin@erp.com",
+        passwordHash,
+        roleId: roles.get("super-admin")!.id,
+        staffNo: "ADM-001",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Adwoa Finance",
+        email: "bursar@erp.com",
+        passwordHash,
+        roleId: roles.get("bursar")!.id,
+        staffNo: "BUR-001",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Akua Mensah",
+        email: "schooladmin@erp.com",
+        passwordHash,
+        roleId: roles.get("school-admin")!.id,
+        staffNo: "ADM-002",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Kwame Boateng",
+        email: "headteacher@erp.com",
+        passwordHash,
+        roleId: roles.get("principal")!.id,
+        staffNo: "HT-001",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Ama Owusu",
+        email: "teacher1@erp.com",
+        passwordHash,
+        roleId: roles.get("teacher")!.id,
+        staffNo: "TCH-001",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Kojo Asante",
+        email: "teacher2@erp.com",
+        passwordHash,
+        roleId: roles.get("teacher")!.id,
+        staffNo: "TCH-002",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Esi Addo",
+        email: "teacher3@erp.com",
+        passwordHash,
+        roleId: roles.get("teacher")!.id,
+        staffNo: "TCH-003",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Yaw Ofori",
+        email: "teacher4@erp.com",
+        passwordHash,
+        roleId: roles.get("teacher")!.id,
+        staffNo: "TCH-004",
+      },
+    }),
+  ]);
 
-  const ay2025 = await prisma.academicYear.create({
+  await prisma.schoolStaff.createMany({
+    data: [
+      {
+        userId: users[0].id,
+        staffNo: "ADM-001",
+        jobTitle: "Platform Administrator",
+        category: SchoolStaffCategory.ADMIN,
+      },
+      {
+        userId: users[1].id,
+        staffNo: "ADM-002",
+        jobTitle: "School Administrator",
+        category: SchoolStaffCategory.ADMIN,
+      },
+      {
+        userId: users[2].id,
+        staffNo: "HT-001",
+        jobTitle: "Headteacher",
+        category: SchoolStaffCategory.ADMIN,
+      },
+      {
+        userId: users[3].id,
+        staffNo: "TCH-001",
+        jobTitle: "Class Teacher",
+        category: SchoolStaffCategory.TEACHING,
+      },
+      {
+        userId: users[4].id,
+        staffNo: "TCH-002",
+        jobTitle: "Class Teacher",
+        category: SchoolStaffCategory.TEACHING,
+      },
+      {
+        userId: users[5].id,
+        staffNo: "TCH-003",
+        jobTitle: "Class Teacher",
+        category: SchoolStaffCategory.TEACHING,
+      },
+      {
+        userId: users[6].id,
+        staffNo: "TCH-004",
+        jobTitle: "Class Teacher",
+        category: SchoolStaffCategory.TEACHING,
+      },
+      {
+        userId: users[7].id,
+        staffNo: "BUR-001",
+        jobTitle: "School Bursar",
+        category: SchoolStaffCategory.ADMIN,
+      },
+    ],
+  });
+
+  await prisma.academicSettings.create({
+    data: { id: "default", defaultTermCount: 3 },
+  });
+  await prisma.schoolProfile.create({
+    data: {
+      id: "default",
+      name: "Lumen Community School",
+      motto: "Knowledge, Character, Service",
+      address: "Accra, Ghana",
+      phone: "+233 20 000 0000",
+      email: "school@lumen.org",
+      headteacherName: "Kwame Boateng",
+      reportFooter:
+        "This report is an official academic record of Lumen Community School.",
+    },
+  });
+
+  const levelDefinitions = [
+    ["KG 1", "KG1"],
+    ["KG 2", "KG2"],
+    ["Basic 1", "B1"],
+    ["Basic 2", "B2"],
+    ["Basic 3", "B3"],
+    ["Basic 4", "B4"],
+    ["Basic 5", "B5"],
+    ["Basic 6", "B6"],
+    ["JHS 1", "JHS1"],
+    ["JHS 2", "JHS2"],
+    ["JHS 3", "JHS3"],
+  ] as const;
+  const levels = [];
+  for (let index = 0; index < levelDefinitions.length; index++) {
+    const [name, code] = levelDefinitions[index];
+    levels.push(
+      await prisma.gradeLevel.create({
+        data: {
+          name,
+          code,
+          order: index + 1,
+          isFinal: index === levelDefinitions.length - 1,
+        },
+      }),
+    );
+  }
+  for (let index = 0; index < levels.length - 1; index++) {
+    await prisma.gradeLevel.update({
+      where: { id: levels[index].id },
+      data: { nextGradeLevelId: levels[index + 1].id },
+    });
+  }
+
+  const activeYear = await prisma.academicYear.create({
     data: {
       name: "2025 / 2026",
-      active: true,
+      startDate: new Date("2025-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-07-24T00:00:00.000Z"),
+      termCount: 3,
+      status: AcademicYearStatus.ACTIVE,
       terms: {
-        create: [
-          { name: "Term 1", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15"), active: false },
-          { name: "Term 2", startDate: new Date("2026-01-10"), endDate: new Date("2026-04-05"), active: true },
-          { name: "Term 3", startDate: new Date("2026-04-25"), endDate: new Date("2026-07-20"), active: false },
-        ]
-      }
-    }
+        create: termDates(2025).map((term) => ({
+          ...term,
+          status: term.sequence === 3 ? TermStatus.ACTIVE : TermStatus.CLOSED,
+        })),
+      },
+    },
   });
-
-  const ay2024 = await prisma.academicYear.create({
+  const draftYear = await prisma.academicYear.create({
+    data: {
+      name: "2026 / 2027",
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2027-07-24T00:00:00.000Z"),
+      termCount: 3,
+      status: AcademicYearStatus.DRAFT,
+      terms: {
+        create: termDates(2026).map((term) => ({
+          ...term,
+          status: TermStatus.PENDING,
+        })),
+      },
+    },
+  });
+  const previousYear = await prisma.academicYear.create({
     data: {
       name: "2024 / 2025",
-      active: false,
+      startDate: new Date("2024-09-01T00:00:00.000Z"),
+      endDate: new Date("2025-07-24T00:00:00.000Z"),
+      termCount: 3,
+      status: AcademicYearStatus.CLOSED,
       terms: {
+        create: termDates(2024).map((term) => ({
+          ...term,
+          status: TermStatus.CLOSED,
+        })),
+      },
+    },
+  });
+  await createAssessmentScheme(activeYear.id);
+  await createAssessmentScheme(draftYear.id);
+  const activeTerms = await prisma.term.findMany({
+    where: { academicYearId: activeYear.id },
+    orderBy: { sequence: "asc" },
+  });
+  const previousTerms = await prisma.term.findMany({
+    where: { academicYearId: previousYear.id },
+    orderBy: { sequence: "asc" },
+  });
+
+  const subjectDefinitions = [
+    ["English Language", "ENG"],
+    ["Mathematics", "MATH"],
+    ["Integrated Science", "SCI"],
+    ["Social Studies", "SOC"],
+    ["Creative Arts", "ART"],
+    ["Religious and Moral Education", "RME"],
+    ["Computing", "ICT"],
+    ["French", "FRE"],
+  ] as const;
+  const subjects = [];
+  for (const [name, code] of subjectDefinitions) {
+    subjects.push(await prisma.subject.create({ data: { name, code } }));
+  }
+
+  const activeSections = [];
+  const draftSections = [];
+  for (let index = 0; index < levels.length; index++) {
+    const level = levels[index];
+    const teacher = users[3 + (index % 4)];
+    const sectionNames =
+      level.code === "B1"
+        ? [`${level.name} A`, `${level.name} B`]
+        : [`${level.name} A`];
+    for (const name of sectionNames) {
+      activeSections.push(
+        await prisma.classSection.create({
+          data: {
+            name,
+            capacity: 35,
+            academicYearId: activeYear.id,
+            gradeLevelId: level.id,
+            classTeacherId: teacher.id,
+          },
+        }),
+      );
+      draftSections.push(
+        await prisma.classSection.create({
+          data: {
+            name,
+            capacity: 35,
+            academicYearId: draftYear.id,
+            gradeLevelId: level.id,
+            classTeacherId: teacher.id,
+          },
+        }),
+      );
+    }
+  }
+  const previousSection = await prisma.classSection.create({
+    data: {
+      name: "KG 2 A",
+      capacity: 35,
+      active: false,
+      academicYearId: previousYear.id,
+      gradeLevelId: levels.find((level) => level.code === "KG2")!.id,
+    },
+  });
+
+  for (const year of [activeYear, draftYear]) {
+    for (const level of levels) {
+      const selected = level.code.startsWith("KG")
+        ? subjects.slice(0, 6)
+        : subjects;
+      await prisma.curriculumSubject.createMany({
+        data: selected.map((subject, index) => ({
+          academicYearId: year.id,
+          gradeLevelId: level.id,
+          subjectId: subject.id,
+          passMark: 50,
+          sortOrder: index + 1,
+        })),
+      });
+    }
+  }
+
+  const colors = [
+    "#0f766e",
+    "#15803d",
+    "#0369a1",
+    "#7c3aed",
+    "#b45309",
+    "#be123c",
+    "#0d9488",
+    "#4d7c0f",
+  ];
+  const firstNames = [
+    "Ada",
+    "Ben",
+    "Chika",
+    "Doris",
+    "Emeka",
+    "Fatima",
+    "Grace",
+    "Habiba",
+    "Isaac",
+    "Joy",
+    "Kemi",
+    "Lola",
+    "Musa",
+    "Ngozi",
+    "Olu",
+    "Priscilla",
+    "Quincy",
+    "Ridwan",
+    "Sade",
+    "Tobi",
+    "Uche",
+    "Victor",
+    "Wale",
+    "Yetunde",
+  ];
+  const lastNames = [
+    "Okafor",
+    "Adeyemi",
+    "Mensah",
+    "Yusuf",
+    "Achieng",
+    "Boateng",
+    "Wanjiku",
+    "Otieno",
+    "Nakato",
+    "Bello",
+    "Eze",
+    "Owusu",
+  ];
+  for (let index = 0; index < 24; index++) {
+    const section = activeSections[index % activeSections.length];
+    await prisma.student.create({
+      data: {
+        admissionNo: `ADM/2025/${String(1000 + index)}`,
+        firstName: firstNames[index],
+        lastName: lastNames[index % lastNames.length],
+        gender: index % 2 === 0 ? "F" : "M",
+        dob: new Date(
+          `${2013 + (index % 6)}-${String((index % 12) + 1).padStart(2, "0")}-${String((index % 27) + 1).padStart(2, "0")}T00:00:00.000Z`,
+        ),
+        guardianName: `${lastNames[index % lastNames.length]} Family`,
+        guardianPhone: `+233 20 555 ${String(1000 + index)}`,
+        guardianRelation: index % 2 === 0 ? "Mother" : "Father",
+        guardianEmail: `guardian${index}@mail.com`,
+        address: `${10 + index} Community Road, Accra`,
+        photoColor: colors[index % colors.length],
+        enrolments: {
+          create: {
+            academicYearId: activeYear.id,
+            classSectionId: section.id,
+            status: EnrollmentStatus.ACTIVE,
+            feeEffectiveTermId: activeTerms[0].id,
+          },
+        },
+      },
+    });
+  }
+
+  const [tuition, feeding, pta] = await Promise.all([
+    prisma.feeItem.create({
+      data: {
+        code: "TUITION",
+        name: "Tuition",
+        description: "Term tuition fee",
+      },
+    }),
+    prisma.feeItem.create({
+      data: {
+        code: "FEEDING",
+        name: "Feeding",
+        description: "Optional school feeding service",
+      },
+    }),
+    prisma.feeItem.create({
+      data: { code: "PTA", name: "PTA Levy", description: "Term PTA levy" },
+    }),
+  ]);
+  const basicOne = levels.find((level) => level.code === "B1")!;
+  const activeTerm = activeTerms.find(
+    (term) => term.status === TermStatus.ACTIVE,
+  )!;
+  const feeSchedule = await prisma.feeSchedule.create({
+    data: {
+      academicYearId: activeYear.id,
+      termId: activeTerm.id,
+      gradeLevelId: basicOne.id,
+      kind: "STANDARD",
+      sequence: 1,
+      name: `${activeTerm.name} Basic 1 Fees`,
+      status: "PUBLISHED",
+      submittedById: users[7].id,
+      submittedAt: new Date(),
+      publishedById: users[1].id,
+      publishedAt: new Date(),
+      lines: {
         create: [
-          { name: "Term 1", startDate: new Date("2024-09-01"), endDate: new Date("2024-12-15"), active: false },
-          { name: "Term 2", startDate: new Date("2025-01-10"), endDate: new Date("2025-04-05"), active: false },
-          { name: "Term 3", startDate: new Date("2025-04-25"), endDate: new Date("2025-07-20"), active: false },
-        ]
-      }
-    }
+          {
+            feeItemId: tuition.id,
+            label: tuition.name,
+            amount: 450,
+            dueDate: activeTerm.endDate,
+            applicability: "MANDATORY",
+          },
+          {
+            feeItemId: pta.id,
+            label: pta.name,
+            amount: 50,
+            dueDate: activeTerm.endDate,
+            applicability: "MANDATORY",
+          },
+          {
+            feeItemId: feeding.id,
+            label: feeding.name,
+            amount: 150,
+            dueDate: activeTerm.endDate,
+            applicability: "OPTIONAL",
+          },
+        ],
+      },
+    },
+    include: { lines: true },
   });
-  console.log("  ✓ Academic Years & Terms seeded");
-
-  // ── 3. Create staff users ──────────────────────────────
-  console.log("\n  👤 Seeding Staff Users...");
-  const passwordHash = await bcrypt.hash("admin123", 12);
-  const teacherPasswordHash = await bcrypt.hash("teacher123", 12);
-
-  // Create Seed Admin
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@erp.com";
-  const adminName = process.env.SEED_ADMIN_NAME || "Super Admin";
-  
-  const superAdmin = await prisma.user.create({
+  const basicOneEnrolments = await prisma.studentEnrolment.findMany({
+    where: {
+      academicYearId: activeYear.id,
+      classSection: { gradeLevelId: basicOne.id },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const historicalEnrolment = await prisma.studentEnrolment.create({
     data: {
-      email: adminEmail,
-      passwordHash,
-      name: adminName,
-      roleId: roleMap["super-admin"],
-      staffNo: "ST-000",
-      phone: "+234 803 000 0000",
-    }
+      studentId: basicOneEnrolments[0].studentId,
+      academicYearId: previousYear.id,
+      classSectionId: previousSection.id,
+      status: EnrollmentStatus.COMPLETED,
+      completedAt: previousYear.endDate,
+      feeEffectiveTermId: previousTerms[0].id,
+    },
   });
-  console.log(`  ✓ Super Admin created: ${adminEmail}`);
-
-  // Create Headteacher
-  const headteacher = await prisma.user.create({
+  const oldSchedule = await prisma.feeSchedule.create({
     data: {
-      email: "grace@school.org",
-      passwordHash: await bcrypt.hash("head123", 12),
-      name: "Grace Okonkwo",
-      roleId: roleMap["headteacher"],
-      staffNo: "ST-001",
-      phone: "+234 803 111 2200",
-    }
+      academicYearId: previousYear.id,
+      termId: previousTerms[2].id,
+      gradeLevelId: previousSection.gradeLevelId,
+      kind: "STANDARD",
+      sequence: 1,
+      name: "Term 3 KG 2 Fees",
+      status: "PUBLISHED",
+      submittedById: users[7].id,
+      submittedAt: previousYear.endDate,
+      publishedById: users[1].id,
+      publishedAt: previousYear.endDate,
+      lines: {
+        create: [
+          {
+            feeItemId: tuition.id,
+            label: tuition.name,
+            amount: 200,
+            dueDate: previousTerms[2].endDate,
+            applicability: "MANDATORY",
+          },
+        ],
+      },
+    },
+    include: { lines: true },
   });
-
-  // Create Bursar
-  const bursar = await prisma.user.create({
+  await prisma.studentCharge.create({
     data: {
-      email: "michael@school.org",
-      passwordHash: await bcrypt.hash("bursar123", 12),
-      name: "Michael Otieno",
-      roleId: roleMap["bursar"],
-      staffNo: "ST-008",
-      phone: "+234 803 111 2207",
-    }
+      enrolmentId: historicalEnrolment.id,
+      lineId: oldSchedule.lines[0].id,
+      amount: oldSchedule.lines[0].amount,
+      dueDate: oldSchedule.lines[0].dueDate,
+    },
+  });
+  const optionalLine = feeSchedule.lines.find(
+    (line) => line.applicability === "OPTIONAL",
+  )!;
+  if (basicOneEnrolments[0])
+    await prisma.optionalFeeAssignment.create({
+      data: {
+        enrolmentId: basicOneEnrolments[0].id,
+        lineId: optionalLine.id,
+        assignedById: users[7].id,
+      },
+    });
+  await prisma.studentCharge.createMany({
+    data: basicOneEnrolments.flatMap((enrolment, index) =>
+      feeSchedule.lines
+        .filter((line) => line.applicability === "MANDATORY" || index === 0)
+        .map((line) => ({
+          enrolmentId: enrolment.id,
+          lineId: line.id,
+          amount: line.amount,
+          dueDate: line.dueDate,
+        })),
+    ),
+  });
+  const firstCharge = await prisma.studentCharge.findFirst({
+    where: { enrolmentId: basicOneEnrolments[0]?.id },
+    include: { enrolment: true },
+  });
+  if (firstCharge)
+    await recordPayment(users[7].id, {
+      studentId: firstCharge.enrolment.studentId,
+      amount: 300,
+      method: "CASH",
+      idempotencyKey: "seed-payment-basic-one",
+      allocations: [{ chargeId: firstCharge.id, amount: 250 }],
+    });
+
+  const accountingSetup = await bootstrapAccounting(users[1].id, activeYear.id);
+  const cashAccount = accountingSetup.methodMappings.find(
+    (mapping) => mapping.method === "CASH",
+  )!.moneyAccount;
+  await activateAccounting(users[1].id, {
+    cutoverDate: new Date(),
+    moneyBalances: [{ moneyAccountId: cashAccount.id, amount: 300 }],
+    otherBalances: [],
+  });
+  const expenseAccount = accountingSetup.accounts.find(
+    (account) => account.code === "5020",
+  )!;
+  const expense = await createExpense(users[7].id, {
+    date: new Date(),
+    payee: "Electricity Company",
+    reference: "SEED-UTILITY-001",
+    description: "Seeded electricity expense",
+    missingDocumentReason: "Seed demonstration record",
+    lines: [
+      {
+        accountId: expenseAccount.id,
+        description: "Electricity bill",
+        amount: 80,
+      },
+    ],
+  });
+  await submitExpense(users[7].id, expense.id);
+  await decideExpense(users[1].id, expense.id, true);
+  await payExpense(users[7].id, expense.id, {
+    amount: 50,
+    date: new Date(),
+    moneyAccountId: cashAccount.id,
+    transactionRef: "SEED-CASH-001",
   });
 
-  // Create Teachers
-  const teachersData = [
-    { email: "daniel@school.org", name: "Daniel Mensah", staffNo: "ST-002", phone: "+234 803 111 2201" },
-    { email: "amina@school.org", name: "Amina Yusuf", staffNo: "ST-003", phone: "+234 803 111 2202" },
-    { email: "peter@school.org", name: "Peter Achieng", staffNo: "ST-004", phone: "+234 803 111 2203" },
-    { email: "linda@school.org", name: "Linda Boateng", staffNo: "ST-005", phone: "+234 803 111 2204" },
-    { email: "joseph@school.org", name: "Joseph Wanjiku", staffNo: "ST-006", phone: "+234 803 111 2205" },
-    { email: "sarah@school.org", name: "Sarah Adeyemi", staffNo: "ST-007", phone: "+234 803 111 2206" },
-  ];
-
-  const teachers: any[] = [];
-  for (const t of teachersData) {
-    const teacher = await prisma.user.create({
-      data: {
-        email: t.email,
-        passwordHash: teacherPasswordHash,
-        name: t.name,
-        roleId: roleMap["teacher"],
-        staffNo: t.staffNo,
-        phone: t.phone,
-      }
-    });
-    teachers.push(teacher);
-  }
-  console.log(`  ✓ Seeded ${teachers.length} teachers`);
-
-  // ── 4. Create classrooms ───────────────────────────────
-  console.log("\n  🏫 Seeding Classrooms...");
-
-  const classNames = ["Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6"];
-  const classrooms: any[] = [];
-
-  for (let i = 0; i < classNames.length; i++) {
-    const classRoom = await prisma.classRoom.create({
-      data: {
-        name: classNames[i],
-        level: i + 1,
-        capacity: 35,
-        teacherId: teachers[i].id, // Assign corresponding teacher
-      }
-    });
-    classrooms.push(classRoom);
-  }
-  console.log(`  ✓ Seeded ${classrooms.length} classrooms`);
-
-  // ── 5. Create subjects ─────────────────────────────────
-  console.log("\n  📚 Seeding Subjects...");
-
-  const subjectsData = [
-    { name: "English", code: "ENG" },
-    { name: "Mathematics", code: "MTH" },
-    { name: "Science", code: "SCI" },
-    { name: "Social Studies", code: "SST" },
-    { name: "Religious Ed", code: "REL" },
-    { name: "Creative Arts", code: "ART" },
-  ];
-
-  const subjects: any[] = [];
-  for (const s of subjectsData) {
-    const subject = await prisma.subject.create({
-      data: {
-        name: s.name,
-        code: s.code,
-      }
-    });
-    subjects.push(subject);
-  }
-  console.log(`  ✓ Seeded ${subjects.length} subjects`);
-
-  // ── 6. Map subjects to classes and assign teachers ────
-  console.log("\n  🔗 Mapping ClassSubjects...");
-
-  // Create many-to-many SubjectTeacher assignments
-  // Daniel teaches English and Mathematics
-  const english = subjects.find(s => s.code === "ENG");
-  const math = subjects.find(s => s.code === "MTH");
-  const science = subjects.find(s => s.code === "SCI");
-  const sst = subjects.find(s => s.code === "SST");
-  const rel = subjects.find(s => s.code === "REL");
-  const art = subjects.find(s => s.code === "ART");
-
-  await prisma.subjectTeacher.createMany({
-    data: [
-      { subjectId: english.id, teacherId: teachers[0].id }, // Daniel
-      { subjectId: math.id, teacherId: teachers[0].id },    // Daniel
-      { subjectId: math.id, teacherId: teachers[1].id },    // Amina
-      { subjectId: science.id, teacherId: teachers[2].id }, // Peter
-      { subjectId: sst.id, teacherId: teachers[3].id },     // Linda
-      { subjectId: english.id, teacherId: teachers[3].id }, // Linda
-      { subjectId: rel.id, teacherId: teachers[4].id },     // Joseph
-      { subjectId: math.id, teacherId: teachers[5].id },    // Sarah
-      { subjectId: science.id, teacherId: teachers[5].id }, // Sarah
-    ]
-  });
-
-  // Map subjects to classRooms and assign subject teachers
-  // Mapping standard subjects to Primary 1 with Daniel
-  await prisma.classSubject.createMany({
-    data: [
-      // Primary 1
-      { classId: classrooms[0].id, subjectId: english.id, teacherId: teachers[0].id, passMark: 50, weight: 1 },
-      { classId: classrooms[0].id, subjectId: math.id, teacherId: teachers[0].id, passMark: 50, weight: 1 },
-      
-      // Primary 2
-      { classId: classrooms[1].id, subjectId: math.id, teacherId: teachers[1].id, passMark: 50, weight: 1 },
-      { classId: classrooms[1].id, subjectId: english.id, teacherId: teachers[0].id, passMark: 50, weight: 1 },
-
-      // Primary 3
-      { classId: classrooms[2].id, subjectId: science.id, teacherId: teachers[2].id, passMark: 50, weight: 1 },
-      { classId: classrooms[2].id, subjectId: math.id, teacherId: teachers[1].id, passMark: 50, weight: 1 },
-
-      // Primary 4
-      { classId: classrooms[3].id, subjectId: sst.id, teacherId: teachers[3].id, passMark: 50, weight: 1 },
-      { classId: classrooms[3].id, subjectId: english.id, teacherId: teachers[3].id, passMark: 50, weight: 1 },
-
-      // Primary 5
-      { classId: classrooms[4].id, subjectId: rel.id, teacherId: teachers[4].id, passMark: 50, weight: 1 },
-      { classId: classrooms[4].id, subjectId: art.id, teacherId: teachers[0].id, passMark: 50, weight: 1 },
-
-      // Primary 6
-      { classId: classrooms[5].id, subjectId: math.id, teacherId: teachers[5].id, passMark: 55, weight: 2 },
-      { classId: classrooms[5].id, subjectId: science.id, teacherId: teachers[5].id, passMark: 55, weight: 2 },
-    ]
-  });
-  console.log("  ✓ Mapped ClassSubjects successfully");
-
-  // ── 7. Create students and enrolments ─────────────────
-  console.log("\n  🎓 Seeding Students & Enrolments...");
-
-  const colors = ["#0f766e","#15803d","#0369a1","#7c3aed","#b45309","#be123c","#0d9488","#4d7c0f"];
-  const firstNames = ["Ada","Ben","Chika","Doris","Emeka","Fatima","Grace","Habiba","Isaac","Joy","Kemi","Lola","Musa","Ngozi","Olu","Priscilla","Quincy","Ridwan","Sade","Tobi","Uche","Victor","Wale","Yetunde"];
-  const lastNames = ["Okafor","Adeyemi","Mensah","Yusuf","Achieng","Boateng","Wanjiku","Otieno","Nakato","Bello","Eze","Owusu"];
-
-  // Seed 24 students
-  for (let i = 0; i < 24; i++) {
-    const fn = firstNames[i % firstNames.length];
-    const ln = lastNames[i % lastNames.length];
-    const cls = classrooms[i % classrooms.length];
-
-    const student = await prisma.student.create({
-      data: {
-        admissionNo: `ADM/2025/${String(1000 + i)}`,
-        firstName: fn,
-        lastName: ln,
-        gender: i % 2 === 0 ? "F" : "M",
-        dob: new Date(`${2014 + (i % 6)}-${String((i % 12) + 1).padStart(2,"0")}-${String((i % 27) + 1).padStart(2,"0")}`),
-        status: "active",
-        enrolledAt: new Date(`2024-09-0${(i % 9) + 1}`),
-        guardianName: `${ln} Family`,
-        guardianPhone: `+234 80${i % 10} 555 ${1000 + i}`,
-        guardianRelation: i % 3 === 0 ? "Mother" : i % 3 === 1 ? "Father" : "Guardian",
-        guardianEmail: `guardian${i}@mail.com`,
-        address: `${10 + i} Unity Street, City`,
-        photoColor: colors[i % colors.length],
-      }
-    });
-
-    // Create current enrollment in active year 2025/2026
-    await prisma.studentEnrolment.create({
-      data: {
-        studentId: student.id,
-        classId: cls.id,
-        academicYearId: ay2025.id
-      }
-    });
-  }
-  console.log("  ✓ Students & Enrolments seeded successfully");
-
-  console.log("\n✅ Seed complete!\n");
+  console.log(
+    "Seed complete. Admin: admin@erp.com / admin123; Bursar: bursar@erp.com / admin123",
+  );
 }
 
 main()
-  .catch((e) => {
-    console.error("❌ Seed failed:", e);
-    process.exit(1);
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();

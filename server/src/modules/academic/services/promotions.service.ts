@@ -1,211 +1,295 @@
+import {
+  AcademicYearStatus,
+  EnrollmentStatus,
+  PromotionDecision,
+  PromotionStatus,
+  StudentStatus,
+  TermStatus,
+} from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
 import { AppError } from "../../../lib/errors.js";
+import { assertSectionAccess } from "./access.service.js";
 
-export async function listPromotions(classId: string, activeYearId: string) {
-  const enrollments = await prisma.studentEnrolment.findMany({
+export async function listPromotions(
+  userId: string,
+  roleSlug: string,
+  sectionId: string,
+) {
+  const section = await assertSectionAccess(userId, roleSlug, sectionId);
+  const enrolments = await prisma.studentEnrolment.findMany({
     where: {
-      classId,
-      academicYearId: activeYearId,
+      classSectionId: sectionId,
+      academicYearId: section.academicYearId,
+      status: "ACTIVE",
     },
     include: {
       student: true,
       promotions: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
+        include: { nextEnrolment: { include: { classSection: true } } },
       },
     },
-    orderBy: {
-      student: { lastName: "asc" },
-    },
+    orderBy: [
+      { student: { lastName: "asc" } },
+      { student: { firstName: "asc" } },
+    ],
   });
-
-  return enrollments.map((e) => {
-    const s = e.student;
-    const promo = e.promotions?.[0] || null;
-
+  return enrolments.map((enrolment) => {
+    const promotion = enrolment.promotions[0] ?? null;
     return {
-      studentId: s.id,
-      firstName: s.firstName,
-      lastName: s.lastName,
-      admissionNo: s.admissionNo,
-      photoColor: s.photoColor,
-      status: s.status,
-      enrolmentId: e.id,
-      recommendation: promo?.recommendation ?? "Pending",
-      promotionStatus: promo?.status ?? "PENDING",
-      remarks: promo?.remarks ?? "",
+      enrolmentId: enrolment.id,
+      studentId: enrolment.studentId,
+      firstName: enrolment.student.firstName,
+      lastName: enrolment.student.lastName,
+      admissionNo: enrolment.student.admissionNo,
+      photoColor: enrolment.student.photoColor,
+      studentStatus: enrolment.student.status,
+      decision: promotion?.decision ?? null,
+      recommendation: promotion?.decision ?? "PENDING",
+      promotionStatus: promotion?.status ?? PromotionStatus.PENDING,
+      remarks: promotion?.remarks ?? "",
+      targetSectionId: promotion?.nextEnrolment?.classSectionId ?? null,
+      targetSectionName: promotion?.nextEnrolment?.classSection.name ?? null,
     };
   });
 }
 
 export async function saveRecommendations(
-  recommendedById: string,
-  classId: string,
-  activeYearId: string,
-  recs: { studentId: string; recommendation: string; remarks?: string }[]
+  actorId: string,
+  roleSlug: string,
+  sectionId: string,
+  recommendations: {
+    enrolmentId: string;
+    decision: PromotionDecision;
+    remarks?: string;
+  }[],
 ) {
+  const section = await assertSectionAccess(actorId, roleSlug, sectionId);
+  const enrolments = await prisma.studentEnrolment.findMany({
+    where: {
+      id: { in: recommendations.map((item) => item.enrolmentId) },
+      classSectionId: sectionId,
+      status: "ACTIVE",
+    },
+  });
+  if (
+    enrolments.length !==
+    new Set(recommendations.map((item) => item.enrolmentId)).size
+  )
+    throw AppError.badRequest(
+      "One or more students do not belong to this active section.",
+    );
   return prisma.$transaction(async (tx) => {
-    for (const rec of recs) {
-      const enrolment = await tx.studentEnrolment.findUnique({
-        where: {
-          studentId_academicYearId: {
-            studentId: rec.studentId,
-            academicYearId: activeYearId,
-          },
+    for (const item of recommendations) {
+      const existing = await tx.promotion.findUnique({
+        where: { currentEnrolmentId: item.enrolmentId },
+      });
+      if (existing?.status === PromotionStatus.APPROVED)
+        throw AppError.conflict(
+          "An approved promotion decision cannot be replaced.",
+        );
+      await tx.promotion.upsert({
+        where: { currentEnrolmentId: item.enrolmentId },
+        update: {
+          decision: item.decision,
+          remarks: item.remarks ?? null,
+          recommendedById: actorId,
+          status: PromotionStatus.PENDING,
+        },
+        create: {
+          currentEnrolmentId: item.enrolmentId,
+          decision: item.decision,
+          remarks: item.remarks ?? null,
+          recommendedById: actorId,
         },
       });
-
-      if (!enrolment || enrolment.classId !== classId) {
-        continue; // skip if student not enrolled in this class
-      }
-
-      const existing = await tx.promotion.findFirst({
-        where: {
-          studentEnrolmentId: enrolment.id,
-        },
-      });
-
-      if (existing) {
-        await tx.promotion.update({
-          where: { id: existing.id },
-          data: {
-            recommendation: rec.recommendation,
-            remarks: rec.remarks ?? null,
-            recommendedById,
-            status: "PENDING", // reset status if updated
-          },
-        });
-      } else {
-        await tx.promotion.create({
-          data: {
-            studentEnrolmentId: enrolment.id,
-            recommendation: rec.recommendation,
-            remarks: rec.remarks ?? null,
-            recommendedById,
-            status: "PENDING",
-          },
-        });
-      }
     }
+    await tx.academicAuditLog.create({
+      data: {
+        actorId,
+        action: "PROMOTION_RECOMMENDATIONS_SAVED",
+        entityType: "ClassSection",
+        entityId: section.id,
+        metadata: { count: recommendations.length },
+      },
+    });
   });
 }
 
 export async function approvePromotions(
-  approvedById: string,
-  classId: string,
-  targetClassId: string
+  actorId: string,
+  roleSlug: string,
+  sectionId: string,
+  nextYearId: string,
+  defaultTargetSectionId: string | null,
+  overrides: { enrolmentId: string; targetSectionId: string | null }[],
 ) {
-  const activeYear = await prisma.academicYear.findFirst({
-    where: { active: true },
-  });
-
-  if (!activeYear) {
-    throw AppError.badRequest("No active academic year configured.");
-  }
-
-  // Calculate next year name (e.g. "2025 / 2026" -> "2026 / 2027")
-  const parts = activeYear.name.split("/").map((p) => parseInt(p.trim(), 10));
-  if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) {
-    throw AppError.badRequest("Current active year name format is invalid. Must be 'YYYY / YYYY'.");
-  }
-  const nextName = `${parts[0] + 1} / ${parts[1] + 1}`;
-
-  const nextYear = await prisma.academicYear.findUnique({
-    where: { name: nextName },
-  });
-
-  if (!nextYear) {
+  const section = await assertSectionAccess(actorId, roleSlug, sectionId);
+  const [currentYear, nextYear] = await Promise.all([
+    prisma.academicYear.findUnique({
+      where: { id: section.academicYearId },
+      include: { terms: true },
+    }),
+    prisma.academicYear.findUnique({ where: { id: nextYearId } }),
+  ]);
+  if (!currentYear || currentYear.status !== AcademicYearStatus.ACTIVE)
     throw AppError.badRequest(
-      `The upcoming academic year "${nextName}" must be created and configured in Academic Setup first before executing promotions.`
+      "Promotions can run only from the active academic year.",
     );
-  }
+  const finalTerm = [...currentYear.terms].sort(
+    (a, b) => b.sequence - a.sequence,
+  )[0];
+  if (!finalTerm || finalTerm.status !== TermStatus.CLOSED)
+    throw AppError.badRequest(
+      "The final configured term must be closed before promotions.",
+    );
+  if (!nextYear || nextYear.status !== AcademicYearStatus.DRAFT)
+    throw AppError.badRequest(
+      "The target academic year must exist in draft status.",
+    );
+  if (nextYear.startDate <= currentYear.startDate)
+    throw AppError.badRequest(
+      "The target academic year must follow the current year.",
+    );
 
-  // Get classrooms to verify
-  const currentClass = await prisma.classRoom.findUnique({ where: { id: classId } });
-  const nextClass = await prisma.classRoom.findUnique({ where: { id: targetClassId } });
-
-  if (!currentClass || !nextClass) {
-    throw AppError.badRequest("Invalid classroom configurations.");
-  }
-
-  // Fetch student enrollments in classId for activeYearId
-  const enrollments = await prisma.studentEnrolment.findMany({
-    where: {
-      classId,
-      academicYearId: activeYear.id,
-    },
-    include: {
-      promotions: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
-    },
+  const enrolments = await prisma.studentEnrolment.findMany({
+    where: { classSectionId: sectionId, status: EnrollmentStatus.ACTIVE },
+    include: { student: true, promotions: true },
   });
+  if (enrolments.some((enrolment) => !enrolment.promotions[0]))
+    throw AppError.badRequest(
+      "Every student requires a promotion recommendation.",
+    );
+  const overrideMap = new Map(
+    overrides.map((item) => [item.enrolmentId, item.targetSectionId]),
+  );
+  const targetIds = new Set<string>();
+  if (defaultTargetSectionId) targetIds.add(defaultTargetSectionId);
+  for (const target of overrideMap.values()) if (target) targetIds.add(target);
+  const targets = await prisma.classSection.findMany({
+    where: {
+      id: { in: [...targetIds] },
+      academicYearId: nextYearId,
+      active: true,
+    },
+    include: { gradeLevel: true },
+  });
+  const targetMap = new Map(targets.map((target) => [target.id, target]));
+  if (targetMap.size !== targetIds.size)
+    throw AppError.badRequest(
+      "A selected target section does not belong to the next draft year.",
+    );
 
   return prisma.$transaction(async (tx) => {
-    for (const e of enrollments) {
-      const promo = e.promotions?.[0];
-      if (!promo || promo.status !== "PENDING") {
-        continue; // skip if no pending recommendation
-      }
-
+    let approved = 0;
+    for (const enrolment of enrolments) {
+      const promotion = enrolment.promotions[0];
+      if (promotion.status === PromotionStatus.APPROVED) continue;
+      const decision = promotion.decision;
       let nextEnrolmentId: string | null = null;
-
-      // Handle recommendation rollover logic
-      if (promo.recommendation === "Promote") {
-        // Create enrollment in target class for next year
-        const nextEnroll = await tx.studentEnrolment.create({
-          data: {
-            studentId: e.studentId,
-            classId: targetClassId,
-            academicYearId: nextYear.id,
+      if (
+        decision === PromotionDecision.PROMOTE ||
+        decision === PromotionDecision.REPEAT
+      ) {
+        const targetId =
+          overrideMap.get(enrolment.id) ?? defaultTargetSectionId;
+        if (!targetId)
+          throw AppError.badRequest(
+            `A target section is required for ${enrolment.student.firstName} ${enrolment.student.lastName}.`,
+          );
+        const target = targetMap.get(targetId);
+        if (!target) throw AppError.badRequest("Target section not found.");
+        const expectedGradeId =
+          decision === PromotionDecision.PROMOTE
+            ? section.gradeLevelId &&
+              (
+                await tx.gradeLevel.findUnique({
+                  where: { id: section.gradeLevelId },
+                })
+              )?.nextGradeLevelId
+            : section.gradeLevelId;
+        if (decision === PromotionDecision.PROMOTE && !expectedGradeId)
+          throw AppError.badRequest(
+            "This grade level has no configured next grade; choose graduate or repeat.",
+          );
+        if (target.gradeLevelId !== expectedGradeId)
+          throw AppError.badRequest(
+            `The selected target section is not valid for ${decision.toLowerCase()}.`,
+          );
+        const firstTerm = await tx.term.findFirst({
+          where: { academicYearId: nextYearId },
+          orderBy: { sequence: "asc" },
+        });
+        const nextEnrolment = await tx.studentEnrolment.upsert({
+          where: {
+            studentId_academicYearId: {
+              studentId: enrolment.studentId,
+              academicYearId: nextYearId,
+            },
+          },
+          update: {
+            classSectionId: target.id,
+            status: EnrollmentStatus.PLANNED,
+          },
+          create: {
+            studentId: enrolment.studentId,
+            academicYearId: nextYearId,
+            classSectionId: target.id,
+            status: EnrollmentStatus.PLANNED,
+            feeEffectiveTermId: firstTerm?.id,
           },
         });
-        nextEnrolmentId = nextEnroll.id;
+        nextEnrolmentId = nextEnrolment.id;
         await tx.student.update({
-          where: { id: e.studentId },
-          data: { status: "active" },
+          where: { id: enrolment.studentId },
+          data: { status: StudentStatus.ACTIVE },
         });
-      } else if (promo.recommendation === "Repeat") {
-        // Create enrollment in current class for next year
-        const nextEnroll = await tx.studentEnrolment.create({
-          data: {
-            studentId: e.studentId,
-            classId,
-            academicYearId: nextYear.id,
-          },
+      } else if (decision === PromotionDecision.GRADUATE) {
+        const grade = await tx.gradeLevel.findUnique({
+          where: { id: section.gradeLevelId },
         });
-        nextEnrolmentId = nextEnroll.id;
+        if (!grade?.isFinal)
+          throw AppError.badRequest(
+            "Only students in a final grade level can graduate.",
+          );
         await tx.student.update({
-          where: { id: e.studentId },
-          data: { status: "repeating" },
+          where: { id: enrolment.studentId },
+          data: { status: StudentStatus.GRADUATED },
         });
-      } else if (promo.recommendation === "Graduate") {
+      } else if (decision === PromotionDecision.WITHDRAW) {
         await tx.student.update({
-          where: { id: e.studentId },
-          data: { status: "graduated" },
+          where: { id: enrolment.studentId },
+          data: { status: StudentStatus.WITHDRAWN },
         });
-      } else if (promo.recommendation === "Withdraw") {
+      } else if (decision === PromotionDecision.TRANSFER) {
         await tx.student.update({
-          where: { id: e.studentId },
-          data: { status: "withdrawn" },
-        });
-      } else if (promo.recommendation === "Transfer") {
-        await tx.student.update({
-          where: { id: e.studentId },
-          data: { status: "withdrawn" },
+          where: { id: enrolment.studentId },
+          data: { status: StudentStatus.TRANSFERRED },
         });
       }
-
-      // Update promotion record to approved
+      await tx.studentEnrolment.update({
+        where: { id: enrolment.id },
+        data: { status: EnrollmentStatus.COMPLETED, completedAt: new Date() },
+      });
       await tx.promotion.update({
-        where: { id: promo.id },
+        where: { id: promotion.id },
         data: {
-          status: "APPROVED",
-          approvedById,
+          status: PromotionStatus.APPROVED,
           nextEnrolmentId,
+          approvedById: actorId,
+          approvedAt: new Date(),
         },
       });
+      approved++;
     }
+    await tx.academicAuditLog.create({
+      data: {
+        actorId,
+        action: "PROMOTIONS_APPROVED",
+        entityType: "ClassSection",
+        entityId: sectionId,
+        metadata: { nextYearId, approved },
+      },
+    });
+    return { approved };
   });
 }

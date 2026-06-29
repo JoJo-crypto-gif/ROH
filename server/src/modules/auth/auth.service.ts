@@ -34,11 +34,11 @@ interface UserWithRole {
     name: string;
     permissions: { permission: string }[];
   };
-  classroomsTeached?: { id: string }[];
+  sectionsTaught?: { id: string }[];
 }
 
 function formatUser(user: UserWithRole) {
-  const assignedClass = user.classroomsTeached?.[0];
+  const assignedClass = user.sectionsTaught?.[0];
   return {
     id: user.id,
     email: user.email,
@@ -60,7 +60,7 @@ export async function signIn(email: string, password: string) {
     where: { email: email.toLowerCase() },
     include: {
       role: { include: { permissions: true } },
-      classroomsTeached: {
+      sectionsTaught: {
         select: { id: true }
       }
     },
@@ -144,7 +144,7 @@ export async function refreshAccessToken(refreshToken: string) {
     where: { id: payload.userId },
     include: {
       role: { include: { permissions: true } },
-      classroomsTeached: {
+      sectionsTaught: {
         select: { id: true }
       }
     },
@@ -219,7 +219,7 @@ export async function getMe(userId: string) {
     where: { id: userId },
     include: {
       role: { include: { permissions: true } },
-      classroomsTeached: {
+      sectionsTaught: {
         select: { id: true }
       }
     },

@@ -3,8 +3,12 @@ import { useNavigate, Link } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
-  DropdownMenuLabel, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 
@@ -21,7 +25,9 @@ export function Topbar() {
           placeholder="Search students, staff, receipts…"
           className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-12 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-ring"
         />
-        <kbd className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">⌘K</kbd>
+        <kbd className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          ⌘K
+        </kbd>
       </div>
 
       <DropdownMenu>
@@ -54,7 +60,9 @@ export function Topbar() {
       </Button>
 
       <Button variant="ghost" size="icon" aria-label="Settings" asChild>
-        <Link to="/settings"><Settings className="h-5 w-5" /></Link>
+        <Link to="/settings">
+          <Settings className="h-5 w-5" />
+        </Link>
       </Button>
 
       <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
@@ -87,7 +95,12 @@ export function Topbar() {
             </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={async () => { await signOut(); navigate({ to: "/login" }); }}>
+          <DropdownMenuItem
+            onClick={async () => {
+              await signOut();
+              navigate({ to: "/login" });
+            }}
+          >
             <LogOut className="mr-2 h-4 w-4" /> Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>

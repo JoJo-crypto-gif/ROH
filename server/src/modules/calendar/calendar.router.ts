@@ -19,7 +19,7 @@ router.get("/", authorize("academic.view"), async (req: Request, res: Response, 
 
     if (!academicYearId) {
       // Default to the active academic year if not provided
-      const activeYear = await prisma.academicYear.findFirst({ where: { active: true } });
+      const activeYear = await prisma.academicYear.findFirst({ where: { status: "ACTIVE" } });
       if (!activeYear) throw AppError.badRequest("No active academic year configured.");
       academicYearId = activeYear.id;
     }

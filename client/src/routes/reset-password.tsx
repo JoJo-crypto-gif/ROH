@@ -44,8 +44,12 @@ function ResetPasswordPage() {
     try {
       await authApi.resetPassword(token, password);
       setSuccess(true);
-    } catch (err: any) {
-      setError(err.message || "Failed to reset password. The link may have expired or is invalid.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to reset password. The link may have expired or is invalid.",
+      );
     } finally {
       setLoading(false);
     }
@@ -59,16 +63,23 @@ function ResetPasswordPage() {
         {/* Brand header */}
         <div className="flex flex-col items-center">
           <div className="flex items-center gap-2.5">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand text-brand-foreground" style={{ backgroundImage: "var(--gradient-brand)" }}>
+            <div
+              className="grid h-10 w-10 place-items-center rounded-xl bg-brand text-brand-foreground"
+              style={{ backgroundImage: "var(--gradient-brand)" }}
+            >
               <BookOpenCheck className="h-5 w-5" />
             </div>
-            <span className="text-xl font-semibold tracking-tight text-foreground">Lumen Suite</span>
+            <span className="text-xl font-semibold tracking-tight text-foreground">
+              Lumen Suite
+            </span>
           </div>
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-foreground">
             {success ? "Password Updated" : "Reset Password"}
           </h2>
           <p className="mt-2 text-center text-sm text-muted-foreground">
-            {success ? "Your password has been successfully reset" : "Set a secure new password for your account"}
+            {success
+              ? "Your password has been successfully reset"
+              : "Set a secure new password for your account"}
           </p>
         </div>
 
@@ -81,7 +92,8 @@ function ResetPasswordPage() {
               <div className="space-y-2">
                 <h3 className="text-base font-semibold">Invalid Reset Link</h3>
                 <p className="text-sm text-muted-foreground">
-                  The password reset link you used is invalid, incomplete, or has expired. Please request a new recovery link.
+                  The password reset link you used is invalid, incomplete, or has expired. Please
+                  request a new recovery link.
                 </p>
               </div>
               <Button asChild className="w-full h-11">
@@ -124,7 +136,9 @@ function ResetPasswordPage() {
                     className="h-11 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm outline-none focus:border-ring"
                   />
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">Must be at least 8 characters long.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Must be at least 8 characters long.
+                </p>
               </div>
 
               <div>
@@ -143,7 +157,8 @@ function ResetPasswordPage() {
               </div>
 
               <Button type="submit" disabled={loading} className="w-full h-11 gap-2">
-                {loading ? "Resetting Password…" : "Reset Password"} <ArrowRight className="h-4 w-4" />
+                {loading ? "Resetting Password…" : "Reset Password"}{" "}
+                <ArrowRight className="h-4 w-4" />
               </Button>
             </form>
           )}

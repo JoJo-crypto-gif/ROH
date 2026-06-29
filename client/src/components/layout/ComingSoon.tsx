@@ -2,7 +2,15 @@ import type { ComponentType } from "react";
 import { Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-export function ComingSoon({ icon: Icon, title, description }: { icon: ComponentType<{ className?: string }>; title: string; description: string }) {
+export function ComingSoon({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+}) {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center shadow-[var(--shadow-card)]">

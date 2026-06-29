@@ -1,4 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { type Permission, type Scope, type RoleDefinition } from "@/lib/rbac";
 import { authApi, setAccessToken, refreshSession, type ApiUser } from "@/lib/api";
 
@@ -29,9 +38,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 function apiUserToAuthUser(apiUser: ApiUser): AuthUser {
   // Derive scopes from role slug (mirrors the old mock logic)
   const scopes: Scope[] =
-    apiUser.roleSlug === "super-admin" ? ["all"] :
-    apiUser.roleSlug === "teacher" ? ["school", "class"] :
-    ["school"];
+    apiUser.roleSlug === "super-admin"
+      ? ["all"]
+      : apiUser.roleSlug === "teacher"
+        ? ["school", "class"]
+        : ["school"];
 
   return {
     id: apiUser.id,
@@ -48,6 +59,7 @@ function apiUserToAuthUser(apiUser: ApiUser): AuthUser {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       const data = await refreshSession();
+      queryClient.removeQueries({ queryKey: ["dashboard"] });
       if (data) {
         setUser(apiUserToAuthUser(data.user));
       } else {
@@ -71,44 +84,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     rehydrate();
   }, [rehydrate]);
 
-  const value = useMemo<AuthContextValue>(() => ({
-    user,
-    loading,
-    error,
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      loading,
+      error,
 
-    signIn: async (email: string, password: string) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await authApi.login(email, password);
-        setAccessToken(data.accessToken);
-        setUser(apiUserToAuthUser(data.user));
-      } catch (err: any) {
-        setError(err.message || "Sign in failed");
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
+      signIn: async (email: string, password: string) => {
+        setLoading(true);
+        setError(null);
+        try {
+          const data = await authApi.login(email, password);
+          queryClient.removeQueries({ queryKey: ["dashboard"] });
+          setAccessToken(data.accessToken);
+          setUser(apiUserToAuthUser(data.user));
+        } catch (err: unknown) {
+          setError(err instanceof Error ? err.message : "Sign in failed");
+          throw err;
+        } finally {
+          setLoading(false);
+        }
+      },
 
-    signOut: async () => {
-      try {
-        await authApi.logout();
-      } catch {
-        // Best-effort logout
-      }
-      setAccessToken(null);
-      setUser(null);
-    },
+      signOut: async () => {
+        try {
+          await authApi.logout();
+        } catch {
+          // Best-effort logout
+        }
+        setAccessToken(null);
+        queryClient.removeQueries({ queryKey: ["dashboard"] });
+        setUser(null);
+      },
 
-    rehydrate,
-  }), [user, loading, error, rehydrate]);
+      rehydrate,
+    }),
+    [user, loading, error, rehydrate, queryClient],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

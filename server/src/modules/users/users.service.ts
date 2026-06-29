@@ -1,6 +1,12 @@
 import { prisma } from "../../lib/prisma.js";
 import { hashPassword } from "../../lib/password.js";
 import { AppError } from "../../lib/errors.js";
+import {
+  assertNotSelfDeactivation,
+  assertProtectedRoleManageable,
+  getAssignableRole,
+  type RoleActor,
+} from "../../lib/role-assignment.js";
 
 interface CreateUserInput {
   email: string;
@@ -16,16 +22,33 @@ interface UpdateUserInput {
   active?: boolean;
 }
 
+function initialsOf(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 function formatUser(user: any) {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     avatarUrl: user.avatarUrl,
+    avatarInitials: initialsOf(user.name),
     active: user.active,
+    staffNo: user.schoolStaffProfile?.staffNo ?? user.staffNo,
+    phone: user.schoolStaffProfile?.phone ?? user.phone,
+    schoolStaffId: user.schoolStaffProfile?.id ?? null,
+    schoolStaffCategory: user.schoolStaffProfile?.category ?? null,
+    schoolStaffStatus: user.schoolStaffProfile?.status ?? null,
     roleId: user.role?.id ?? user.roleId,
     roleName: user.role?.name,
     roleSlug: user.role?.slug,
+    permissions:
+      user.role?.permissions?.map((item: any) => item.permission) ?? [],
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -33,7 +56,10 @@ function formatUser(user: any) {
 
 export async function listUsers() {
   const users = await prisma.user.findMany({
-    include: { role: true },
+    include: {
+      role: { include: { permissions: true } },
+      schoolStaffProfile: true,
+    },
     orderBy: { createdAt: "desc" },
   });
   return users.map(formatUser);
@@ -44,24 +70,27 @@ export async function getUserById(id: string) {
     where: { id },
     include: {
       role: { include: { permissions: true } },
+      schoolStaffProfile: true,
     },
   });
   if (!user) throw AppError.notFound("User not found");
   return formatUser(user);
 }
 
-export async function createUser(input: CreateUserInput) {
+export async function createUser(actor: RoleActor, input: CreateUserInput) {
   // Check email uniqueness
   const existing = await prisma.user.findUnique({
     where: { email: input.email.toLowerCase() },
   });
   if (existing) {
-    throw AppError.conflict("A user with this email already exists", "EMAIL_EXISTS");
+    throw AppError.conflict(
+      "A user with this email already exists",
+      "EMAIL_EXISTS",
+    );
   }
 
   // Validate role exists
-  const role = await prisma.role.findUnique({ where: { id: input.roleId } });
-  if (!role) throw AppError.badRequest("Invalid role ID");
+  await getAssignableRole(actor, input.roleId);
 
   const passwordHash = await hashPassword(input.password);
 
@@ -72,28 +101,42 @@ export async function createUser(input: CreateUserInput) {
       name: input.name,
       roleId: input.roleId,
     },
-    include: { role: true },
+    include: {
+      role: { include: { permissions: true } },
+      schoolStaffProfile: true,
+    },
   });
 
   return formatUser(user);
 }
 
-export async function updateUser(id: string, input: UpdateUserInput) {
-  const existing = await prisma.user.findUnique({ where: { id } });
+export async function updateUser(
+  actor: RoleActor,
+  id: string,
+  input: UpdateUserInput,
+) {
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    include: { role: true },
+  });
   if (!existing) throw AppError.notFound("User not found");
+  assertProtectedRoleManageable(actor, existing.role.slug);
+  if (input.active === false) assertNotSelfDeactivation(actor, id);
 
   if (input.email) {
     const emailTaken = await prisma.user.findFirst({
       where: { email: input.email.toLowerCase(), id: { not: id } },
     });
     if (emailTaken) {
-      throw AppError.conflict("A user with this email already exists", "EMAIL_EXISTS");
+      throw AppError.conflict(
+        "A user with this email already exists",
+        "EMAIL_EXISTS",
+      );
     }
   }
 
   if (input.roleId) {
-    const role = await prisma.role.findUnique({ where: { id: input.roleId } });
-    if (!role) throw AppError.badRequest("Invalid role ID");
+    await getAssignableRole(actor, input.roleId);
   }
 
   const user = await prisma.user.update({
@@ -104,21 +147,30 @@ export async function updateUser(id: string, input: UpdateUserInput) {
       ...(input.roleId && { roleId: input.roleId }),
       ...(input.active !== undefined && { active: input.active }),
     },
-    include: { role: true },
+    include: {
+      role: { include: { permissions: true } },
+      schoolStaffProfile: true,
+    },
   });
 
   return formatUser(user);
 }
 
-export async function deactivateUser(id: string) {
-  const existing = await prisma.user.findUnique({ where: { id } });
-  if (!existing) throw AppError.notFound("User not found");
-
-  await prisma.user.update({
+export async function deactivateUser(actor: RoleActor, id: string) {
+  const existing = await prisma.user.findUnique({
     where: { id },
-    data: { active: false },
+    include: { role: true },
   });
+  if (!existing) throw AppError.notFound("User not found");
+  assertProtectedRoleManageable(actor, existing.role.slug);
+  assertNotSelfDeactivation(actor, id);
 
-  // Revoke all sessions
-  await prisma.refreshToken.deleteMany({ where: { userId: id } });
+  await prisma.$transaction([
+    prisma.user.update({ where: { id }, data: { active: false } }),
+    prisma.schoolStaff.updateMany({
+      where: { userId: id },
+      data: { status: "INACTIVE" },
+    }),
+    prisma.refreshToken.deleteMany({ where: { userId: id } }),
+  ]);
 }

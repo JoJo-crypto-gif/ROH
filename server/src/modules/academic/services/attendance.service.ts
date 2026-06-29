@@ -1,127 +1,79 @@
+import { AttendanceStatus, TermStatus } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
 import { AppError } from "../../../lib/errors.js";
+import { assertSectionAccess } from "./access.service.js";
 
-export async function listAttendance(classId: string, date: Date, activeTermId: string) {
-  // Find all active students in the classroom for this year
-  const enrollments = await prisma.studentEnrolment.findMany({
-    where: {
-      classId,
-      academicYear: { active: true },
-      student: { status: "active" },
-    },
-    include: {
-      student: true,
-    },
-    orderBy: {
-      student: { lastName: "asc" },
-    },
+function dayStart(value: Date) {
+  const date = new Date(value);
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
+}
+
+async function validateContext(userId: string, roleSlug: string, sectionId: string, termId: string, date?: Date) {
+  const [section, term] = await Promise.all([
+    assertSectionAccess(userId, roleSlug, sectionId),
+    prisma.term.findUnique({ where: { id: termId } }),
+  ]);
+  if (!term) throw AppError.notFound("Term not found.");
+  if (term.academicYearId !== section.academicYearId) throw AppError.badRequest("Term and class section belong to different academic years.");
+  if (date) {
+    const normalized = dayStart(date);
+    if (normalized < dayStart(term.startDate) || normalized > dayStart(term.endDate)) throw AppError.badRequest("Attendance date must fall inside the selected term.");
+  }
+  return { section, term };
+}
+
+export async function listAttendance(userId: string, roleSlug: string, sectionId: string, date: Date, termId: string) {
+  await validateContext(userId, roleSlug, sectionId, termId, date);
+  const normalizedDate = dayStart(date);
+  const enrolments = await prisma.studentEnrolment.findMany({
+    where: { classSectionId: sectionId, status: "ACTIVE" },
+    include: { student: true, attendance: { where: { date: normalizedDate } } },
+    orderBy: [{ student: { lastName: "asc" } }, { student: { firstName: "asc" } }],
   });
-
-  const studentsList = enrollments.map((e) => e.student);
-
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  // Find existing attendance marks
-  const attendanceRecords = await prisma.attendance.findMany({
-    where: {
-      termId: activeTermId,
-      date: {
-        gte: startOfDay,
-        lte: endOfDay,
-      },
-      studentId: { in: studentsList.map((s) => s.id) },
-    },
-  });
-
-  const marksMap = new Map(attendanceRecords.map((r) => [r.studentId, r.status]));
-
-  return studentsList.map((s) => ({
-    id: s.id,
-    firstName: s.firstName,
-    lastName: s.lastName,
-    admissionNo: s.admissionNo,
-    photoColor: s.photoColor,
-    status: marksMap.get(s.id) || "Present", // defaults to "Present"
+  return enrolments.map((enrolment) => ({
+    enrolmentId: enrolment.id,
+    studentId: enrolment.student.id,
+    firstName: enrolment.student.firstName,
+    lastName: enrolment.student.lastName,
+    admissionNo: enrolment.student.admissionNo,
+    photoColor: enrolment.student.photoColor,
+    status: enrolment.attendance[0]?.status ?? AttendanceStatus.PRESENT,
   }));
 }
 
 export async function saveAttendance(
-  activeTermId: string,
+  actorId: string,
+  roleSlug: string,
+  sectionId: string,
+  termId: string,
   date: Date,
-  marks: { studentId: string; status: string }[]
+  marks: { enrolmentId: string; status: AttendanceStatus }[],
 ) {
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
-
+  const { term } = await validateContext(actorId, roleSlug, sectionId, termId, date);
+  if (term.status !== TermStatus.ACTIVE) throw AppError.badRequest("Attendance can be changed only for the active term.");
+  const normalizedDate = dayStart(date);
+  const enrolments = await prisma.studentEnrolment.findMany({ where: { id: { in: marks.map((mark) => mark.enrolmentId) }, classSectionId: sectionId, academicYearId: term.academicYearId, status: "ACTIVE" } });
+  if (enrolments.length !== new Set(marks.map((mark) => mark.enrolmentId)).size) throw AppError.badRequest("One or more attendance entries do not belong to this active class section.");
   return prisma.$transaction(async (tx) => {
     for (const mark of marks) {
-      // Find if mark already exists
-      const existing = await tx.attendance.findFirst({
-        where: {
-          studentId: mark.studentId,
-          termId: activeTermId,
-          date: {
-            gte: startOfDay,
-            lte: endOfDay,
-          },
-        },
+      await tx.attendance.upsert({
+        where: { enrolmentId_date: { enrolmentId: mark.enrolmentId, date: normalizedDate } },
+        update: { status: mark.status, termId },
+        create: { enrolmentId: mark.enrolmentId, termId, date: normalizedDate, status: mark.status },
       });
-
-      if (existing) {
-        await tx.attendance.update({
-          where: { id: existing.id },
-          data: { status: mark.status },
-        });
-      } else {
-        await tx.attendance.create({
-          data: {
-            studentId: mark.studentId,
-            termId: activeTermId,
-            date: startOfDay,
-            status: mark.status,
-          },
-        });
-      }
     }
+    await tx.academicAuditLog.create({ data: { actorId, action: "ATTENDANCE_SAVED", entityType: "ClassSection", entityId: sectionId, metadata: { termId, date: normalizedDate.toISOString(), count: marks.length } } });
   });
 }
 
-export async function listAttendanceDates(classId: string, activeTermId: string) {
-  // Find all active students in the classroom for this year
-  const enrollments = await prisma.studentEnrolment.findMany({
-    where: {
-      classId,
-      academicYear: { active: true },
-      student: { status: "active" },
-    },
-    select: {
-      studentId: true,
-    },
-  });
-
-  const studentIds = enrollments.map((e) => e.studentId);
-
-  if (studentIds.length === 0) return [];
-
-  // Find all unique dates where attendance was recorded for these students
+export async function listAttendanceDates(userId: string, roleSlug: string, sectionId: string, termId: string) {
+  await validateContext(userId, roleSlug, sectionId, termId);
   const records = await prisma.attendance.findMany({
-    where: {
-      termId: activeTermId,
-      studentId: { in: studentIds },
-    },
-    select: {
-      date: true,
-    },
+    where: { termId, enrolment: { classSectionId: sectionId } },
+    select: { date: true },
     distinct: ["date"],
+    orderBy: { date: "asc" },
   });
-
-  // Return formatted YYYY-MM-DD strings
-  return records.map((r) => r.date.toISOString().slice(0, 10));
+  return records.map((record) => record.date.toISOString().slice(0, 10));
 }

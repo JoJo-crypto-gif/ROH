@@ -27,6 +27,18 @@ export const config = {
     url: optional("CLIENT_URL", "http://localhost:5173"),
   },
 
+  reports: {
+    storageDir: optional("REPORT_STORAGE_DIR", "./storage/reports"),
+  },
+
+  finance: {
+    storageDir: optional("FINANCE_STORAGE_DIR", "./storage/finance"),
+  },
+
+  accounting: {
+    storageDir: optional("ACCOUNTING_STORAGE_DIR", "./storage/accounting"),
+  },
+
   email: {
     host: process.env.SMTP_HOST || "",
     port: Number(process.env.SMTP_PORT || "587"),

@@ -168,7 +168,9 @@
   --sidebar-foreground: oklch(1 0 0);
   --sidebar-border: oklch(1 0 0);
 }
-.high-contrast * { border-color: var(--border) !important; }
+.high-contrast * {
+  border-color: var(--border) !important;
+}
 .high-contrast a:focus-visible,
 .high-contrast button:focus-visible,
 .high-contrast input:focus-visible,
@@ -178,7 +180,9 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
+  * {
+    border-color: var(--color-border);
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);

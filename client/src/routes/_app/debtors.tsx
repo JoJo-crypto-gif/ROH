@@ -1,105 +1,207 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
-import { Mail, AlertTriangle, Phone } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { Download, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Forbidden } from "@/components/layout/Forbidden";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { financeApi } from "@/lib/api";
 import { hasPermission } from "@/lib/rbac";
-import { students, classes, studentBalance, studentTotalBilled, studentTotalPaid, formatCurrency } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/_app/debtors")({
   head: () => ({ meta: [{ title: "Debtors — Lumen Suite" }] }),
   component: DebtorsPage,
 });
+const money = (value: number) =>
+  new Intl.NumberFormat("en-GH", { style: "currency", currency: "GHS" }).format(value);
+function save(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function DebtorsPage() {
   const { user } = useAuth();
-  const [classId, setClassId] = useState("all");
+  const [search, setSearch] = useState("");
+  const [gradeLevelId, setGradeLevelId] = useState("");
+  const [classSectionId, setClassSectionId] = useState("");
+  const [page, setPage] = useState(1);
+  const filters = useQuery({
+    queryKey: ["debtor-filters"],
+    queryFn: financeApi.getDebtorFilters,
+  });
+  const debtors = useQuery({
+    queryKey: ["debtors", search, gradeLevelId, classSectionId, page],
+    queryFn: () => financeApi.getDebtors({ search, gradeLevelId, classSectionId, page }),
+  });
+  useEffect(() => {
+    const effectivePage = debtors.data?.pagination.page;
+    if (effectivePage && effectivePage !== page) setPage(effectivePage);
+  }, [debtors.data?.pagination.page, page]);
   if (!hasPermission(user, "debtors.view")) return <Forbidden />;
-
-  const debtors = useMemo(() => students
-    .map(s => ({ s, billed: studentTotalBilled(s.id), paid: studentTotalPaid(s.id), bal: studentBalance(s.id) }))
-    .filter(r => r.bal > 0 && (classId === "all" || r.s.classId === classId))
-    .sort((a, b) => b.bal - a.bal),
-    [classId]);
-
-  const total = debtors.reduce((a, r) => a + r.bal, 0);
-
+  const visibleSections =
+    filters.data?.sections.filter(
+      (section) => !gradeLevelId || section.gradeLevelId === gradeLevelId,
+    ) ?? [];
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Debtors"
-        description="Students with outstanding fee balances."
-        actions={<Button size="sm" variant="outline"><Mail className="mr-1.5 h-4 w-4" /> Send reminders</Button>}
+        title="Debtors & arrears"
+        description="Outstanding balances include every term and academic year; available credit is shown separately."
       />
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
-          <div className="text-xs text-muted-foreground">Total outstanding</div>
-          <div className="mt-1 text-2xl font-semibold text-destructive">{formatCurrency(total)}</div>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Stat label="Students owing" value={String(debtors.data?.pagination.total ?? 0)} />
+        <Stat label="Total net exposure" value={money(debtors.data?.totals.netExposure ?? 0)} />
+        <div className="rounded-xl border bg-card p-4">
+          <div className="text-xs text-muted-foreground">Grade filter</div>
+          <select
+            className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
+            value={gradeLevelId}
+            onChange={(e) => {
+              setGradeLevelId(e.target.value);
+              setClassSectionId("");
+              setPage(1);
+            }}
+          >
+            <option value="">All grades</option>
+            {filters.data?.gradeLevels.map((grade) => (
+              <option key={grade.id} value={grade.id}>
+                {grade.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
-          <div className="text-xs text-muted-foreground">Debtors</div>
-          <div className="mt-1 text-2xl font-semibold">{debtors.length}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)] flex items-end justify-between">
-          <div>
-            <div className="text-xs text-muted-foreground">Filter by class</div>
-            <select value={classId} onChange={e => setClassId(e.target.value)} className="mt-1 h-9 rounded-md border border-input bg-background px-2 text-sm">
-              <option value="all">All classes</option>
-              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <AlertTriangle className="h-7 w-7 text-warning" />
+        <div className="rounded-xl border bg-card p-4">
+          <div className="text-xs text-muted-foreground">Current section</div>
+          <select
+            className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
+            value={classSectionId}
+            onChange={(e) => {
+              setClassSectionId(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All sections</option>
+            {visibleSections.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
-
-      <div className="rounded-xl border border-border bg-card overflow-hidden shadow-[var(--shadow-card)]">
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <input
+          className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm"
+          placeholder="Search student or admission number"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+        />
+      </div>
+      {debtors.data?.pagination && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Showing {debtors.data.debtors.length} of {debtors.data.pagination.total} debtors
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+            >
+              Previous
+            </Button>
+            <span>
+              Page {debtors.data.pagination.page} of {debtors.data.pagination.totalPages || 1}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page >= debtors.data.pagination.totalPages}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-xl border bg-card">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+          <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-4 py-2.5 text-left font-medium">Student</th>
-              <th className="px-4 py-2.5 text-left font-medium">Class</th>
-              <th className="px-4 py-2.5 text-left font-medium">Billed</th>
-              <th className="px-4 py-2.5 text-left font-medium">Paid</th>
-              <th className="px-4 py-2.5 text-left font-medium">Balance</th>
-              <th className="px-4 py-2.5 text-left font-medium">Guardian</th>
-              <th className="px-4 py-2.5"></th>
+              <th className="px-4 py-3">Student</th>
+              <th>Previous arrears</th>
+              <th>Current term</th>
+              <th>Future charges</th>
+              <th>Credit</th>
+              <th>Outstanding</th>
+              <th>Net exposure</th>
+              <th></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
-            {debtors.map(({ s, billed, paid, bal }) => {
-              const cls = classes.find(c => c.id === s.classId);
-              return (
-                <tr key={s.id} className="hover:bg-muted/30">
-                  <td className="px-4 py-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-xs font-medium text-white" style={{ backgroundColor: s.photoColor }}>
-                        {s.firstName[0]}{s.lastName[0]}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{s.firstName} {s.lastName}</div>
-                        <div className="text-xs text-muted-foreground">{s.admissionNo}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{cls?.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{formatCurrency(billed)}</td>
-                  <td className="px-4 py-3 text-success">{formatCurrency(paid)}</td>
-                  <td className="px-4 py-3 font-semibold text-destructive">{formatCurrency(bal)}</td>
-                  <td className="px-4 py-3 text-xs">
-                    <div>{s.guardian.name}</div>
-                    <div className="text-muted-foreground inline-flex items-center gap-1"><Phone className="h-3 w-3" /> {s.guardian.phone}</div>
-                  </td>
-                  <td className="px-4 py-3 text-right"><Button size="sm" variant="outline">Remind</Button></td>
-                </tr>
-              );
-            })}
-            {debtors.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">No debtors — well done!</td></tr>}
+          <tbody className="divide-y">
+            {debtors.data?.debtors.map((entry) => (
+              <tr key={entry.student.id}>
+                <td className="px-4 py-3 font-medium">
+                  {entry.student.name}
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {entry.student.admissionNo}
+                  </span>
+                </td>
+                <td>{money(entry.previousArrears)}</td>
+                <td>{money(entry.currentTermBalance)}</td>
+                <td>{money(entry.futureCharges)}</td>
+                <td>{money(entry.availableCredit)}</td>
+                <td>{money(entry.outstanding)}</td>
+                <td className="font-semibold text-destructive">{money(entry.netExposure)}</td>
+                <td>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      financeApi
+                        .downloadStatement(entry.student.id)
+                        .then((blob) =>
+                          save(
+                            blob,
+                            `${entry.student.admissionNo.replaceAll("/", "-")}-statement.pdf`,
+                          ),
+                        )
+                    }
+                  >
+                    <Download className="mr-1 h-4 w-4" />
+                    Statement
+                  </Button>
+                </td>
+              </tr>
+            ))}
+            {!debtors.isLoading && !debtors.data?.debtors.length && (
+              <tr>
+                <td colSpan={8} className="p-10 text-center text-muted-foreground">
+                  No outstanding student balances.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold">{value}</div>
     </div>
   );
 }

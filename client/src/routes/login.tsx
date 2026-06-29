@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { authApi } from "@/lib/api";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface LoginSearch {
   expired?: boolean;
@@ -51,8 +57,12 @@ function LoginPage() {
     try {
       await authApi.forgotPassword(forgotEmail);
       setForgotSuccess(true);
-    } catch (err: any) {
-      setForgotError(err.message || "Failed to send reset link. Please check your email and try again.");
+    } catch (err: unknown) {
+      setForgotError(
+        err instanceof Error
+          ? err.message
+          : "Failed to send reset link. Please check your email and try again.",
+      );
     } finally {
       setForgotLoading(false);
     }
@@ -65,8 +75,8 @@ function LoginPage() {
     try {
       await signIn(email, password);
       navigate({ to: "/dashboard" });
-    } catch (err: any) {
-      setError(err.message || "Sign in failed. Please try again.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Sign in failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -75,7 +85,10 @@ function LoginPage() {
   return (
     <div className="grid min-h-screen md:grid-cols-2">
       {/* Brand panel */}
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-brand p-10 text-brand-foreground md:flex" style={{ backgroundImage: "var(--gradient-brand)" }}>
+      <div
+        className="relative hidden flex-col justify-between overflow-hidden bg-brand p-10 text-brand-foreground md:flex"
+        style={{ backgroundImage: "var(--gradient-brand)" }}
+      >
         <div className="flex items-center gap-2.5">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-accent text-[oklch(0.18_0.04_180)]">
             <BookOpenCheck className="h-5 w-5" />
@@ -84,13 +97,21 @@ function LoginPage() {
         </div>
 
         <div>
-          <h2 className="text-3xl font-semibold leading-tight">One platform for your school, NGO and operations.</h2>
+          <h2 className="text-3xl font-semibold leading-tight">
+            One platform for your school, NGO and operations.
+          </h2>
           <p className="mt-3 max-w-md text-sm text-brand-foreground/75">
-            Manage students, staff, fees and reports today. Add NGO programs, accounting and inventory tomorrow — without changing tools.
+            Manage students, staff, fees and reports today. Add NGO programs, accounting and
+            inventory tomorrow — without changing tools.
           </p>
           <div className="mt-8 grid grid-cols-3 gap-3 max-w-md">
             {["Students", "Staff", "Classes", "Fees", "Reports", "Roles"].map((t) => (
-              <div key={t} className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs backdrop-blur">{t}</div>
+              <div
+                key={t}
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs backdrop-blur"
+              >
+                {t}
+              </div>
             ))}
           </div>
         </div>
@@ -102,7 +123,9 @@ function LoginPage() {
       <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
           <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Sign in to continue to your dashboard.</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Sign in to continue to your dashboard.
+          </p>
 
           {error && (
             <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
@@ -116,7 +139,8 @@ function LoginPage() {
               <div className="relative mt-1.5">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
-                  value={email} onChange={e => setEmail(e.target.value)}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   type="email"
                   placeholder="admin@erp.com"
                   required
@@ -143,7 +167,9 @@ function LoginPage() {
               <div className="relative mt-1.5">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
-                  type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
                   className="h-11 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm outline-none focus:border-ring"
@@ -175,7 +201,9 @@ function LoginPage() {
               <div className="space-y-2">
                 <h3 className="text-sm font-medium">Check your email</h3>
                 <p className="text-xs text-muted-foreground">
-                  We've sent a password reset link to <span className="font-semibold text-foreground">{forgotEmail}</span>. Please check your inbox.
+                  We've sent a password reset link to{" "}
+                  <span className="font-semibold text-foreground">{forgotEmail}</span>. Please check
+                  your inbox.
                 </p>
               </div>
               <Button onClick={() => setForgotOpen(false)} className="w-full mt-2">
@@ -204,7 +232,12 @@ function LoginPage() {
                 </div>
               </div>
               <div className="flex gap-3 justify-end pt-2">
-                <Button type="button" variant="outline" onClick={() => setForgotOpen(false)} disabled={forgotLoading}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setForgotOpen(false)}
+                  disabled={forgotLoading}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={forgotLoading}>

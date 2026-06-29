@@ -48,7 +48,7 @@ router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
 router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = createUserSchema.parse(req.body);
-    const user = await usersService.createUser(body);
+    const user = await usersService.createUser(req.user!, body);
     res.status(201).json({ user });
   } catch (err) {
     next(err);
@@ -56,24 +56,34 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
 });
 
 // ── PATCH /users/:id ─────────────────────────────────────
-router.patch("/:id", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const body = updateUserSchema.parse(req.body);
-    const user = await usersService.updateUser(req.params.id as string, body);
-    res.json({ user });
-  } catch (err) {
-    next(err);
-  }
-});
+router.patch(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = updateUserSchema.parse(req.body);
+      const user = await usersService.updateUser(
+        req.user!,
+        req.params.id as string,
+        body,
+      );
+      res.json({ user });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── DELETE /users/:id ────────────────────────────────────
-router.delete("/:id", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await usersService.deactivateUser(req.params.id as string);
-    res.json({ message: "User deactivated" });
-  } catch (err) {
-    next(err);
-  }
-});
+router.delete(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await usersService.deactivateUser(req.user!, req.params.id as string);
+      res.json({ message: "User deactivated" });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 export { router as usersRouter };
