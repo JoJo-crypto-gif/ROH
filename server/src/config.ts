@@ -39,6 +39,10 @@ export const config = {
     storageDir: optional("ACCOUNTING_STORAGE_DIR", "./storage/accounting"),
   },
 
+  students: {
+    storageDir: optional("STUDENTS_STORAGE_DIR", "./storage/students-pfp"),
+  },
+
   email: {
     host: process.env.SMTP_HOST || "",
     port: Number(process.env.SMTP_PORT || "587"),

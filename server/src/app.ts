@@ -58,6 +58,7 @@ export function createApp() {
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+  app.use("/storage", express.static("./storage"));
   app.use("/auth", authRouter);
   app.use("/users", usersRouter);
   app.use("/roles", rolesRouter);

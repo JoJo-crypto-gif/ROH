@@ -805,6 +805,9 @@ export interface ApiStudent {
   dob: string;
   status: string;
   enrolledAt: string;
+  avatarUrl: string | null;
+  
+  // Primary Guardian
   guardianName: string;
   guardianPhone: string;
   guardianRelation: string;
@@ -815,6 +818,25 @@ export interface ApiStudent {
     relation: string;
     email: string | null;
   };
+  
+  // Secondary Guardian
+  guardian2Name: string | null;
+  guardian2Phone: string | null;
+  guardian2Relation: string | null;
+  guardian2Email: string | null;
+  
+  // Emergency Contact
+  emergencyName: string | null;
+  emergencyPhone: string | null;
+  emergencyRelation: string | null;
+  
+  // Health & Demographics
+  bloodGroup: string | null;
+  allergies: string | null;
+  medicalNotes: string | null;
+  boardingStatus: string;
+  previousSchool: string | null;
+
   address: string;
   photoColor: string;
   enrolmentId: string | null;
@@ -999,10 +1021,33 @@ export const studentsApi = {
     lastName: string;
     gender: string;
     dob: string;
+    avatarUrl?: string | null;
+    avatarBase64?: string;
+    
+    // Primary Guardian
     guardianName: string;
     guardianPhone: string;
     guardianRelation: string;
     guardianEmail?: string | null;
+    
+    // Secondary Guardian
+    guardian2Name?: string | null;
+    guardian2Phone?: string | null;
+    guardian2Relation?: string | null;
+    guardian2Email?: string | null;
+    
+    // Emergency Contact
+    emergencyName?: string | null;
+    emergencyPhone?: string | null;
+    emergencyRelation?: string | null;
+    
+    // Health & Demographics
+    bloodGroup?: string | null;
+    allergies?: string | null;
+    medicalNotes?: string | null;
+    boardingStatus?: string;
+    previousSchool?: string | null;
+    
     address: string;
     classId: string;
     feeEffectiveTermId?: string;
@@ -1015,10 +1060,32 @@ export const studentsApi = {
       gender?: string;
       dob?: string;
       status?: string;
+      avatarUrl?: string | null;
+      avatarBase64?: string;
+      
+      // Primary Guardian
       guardianName?: string;
       guardianPhone?: string;
       guardianRelation?: string;
       guardianEmail?: string | null;
+      
+      // Secondary Guardian
+      guardian2Name?: string | null;
+      guardian2Phone?: string | null;
+      guardian2Relation?: string | null;
+      guardian2Email?: string | null;
+      
+      // Emergency Contact
+      emergencyName?: string | null;
+      emergencyPhone?: string | null;
+      emergencyRelation?: string | null;
+      
+      // Health & Demographics
+      bloodGroup?: string | null;
+      allergies?: string | null;
+      medicalNotes?: string | null;
+      boardingStatus?: string;
+      previousSchool?: string | null;
       address?: string;
       classId?: string;
       feeEffectiveTermId?: string;

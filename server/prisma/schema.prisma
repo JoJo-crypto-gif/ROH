@@ -520,10 +520,32 @@ model Student {
   dob              DateTime
   status           StudentStatus @default(ACTIVE)
   enrolledAt       DateTime      @default(now()) @map("enrolled_at")
+  avatarUrl        String?       @map("avatar_url")
+  
+  // Primary Guardian
   guardianName     String        @map("guardian_name")
   guardianPhone    String        @map("guardian_phone")
   guardianRelation String        @map("guardian_relation")
   guardianEmail    String?       @map("guardian_email")
+  
+  // Secondary Guardian
+  guardian2Name     String?      @map("guardian2_name")
+  guardian2Phone    String?      @map("guardian2_phone")
+  guardian2Relation String?      @map("guardian2_relation")
+  guardian2Email    String?      @map("guardian2_email")
+  
+  // Emergency Contact
+  emergencyName     String?      @map("emergency_name")
+  emergencyPhone    String?      @map("emergency_phone")
+  emergencyRelation String?      @map("emergency_relation")
+  
+  // Health & Demographics
+  bloodGroup        String?      @map("blood_group")
+  allergies         String?
+  medicalNotes      String?      @map("medical_notes")
+  boardingStatus    String       @default("DAY") @map("boarding_status")
+  previousSchool    String?      @map("previous_school")
+
   address          String
   photoColor       String        @map("photo_color")
 

@@ -50,6 +50,9 @@ function formatStudent(student: any) {
     dob: student.dob.toISOString().slice(0, 10),
     status: student.status.toLowerCase(),
     enrolledAt: student.enrolledAt.toISOString().slice(0, 10),
+    avatarUrl: student.avatarUrl,
+    
+    // Primary Guardian
     guardianName: student.guardianName,
     guardianPhone: student.guardianPhone,
     guardianRelation: student.guardianRelation,
@@ -60,6 +63,25 @@ function formatStudent(student: any) {
       relation: student.guardianRelation,
       email: student.guardianEmail,
     },
+    
+    // Secondary Guardian
+    guardian2Name: student.guardian2Name,
+    guardian2Phone: student.guardian2Phone,
+    guardian2Relation: student.guardian2Relation,
+    guardian2Email: student.guardian2Email,
+    
+    // Emergency Contact
+    emergencyName: student.emergencyName,
+    emergencyPhone: student.emergencyPhone,
+    emergencyRelation: student.emergencyRelation,
+    
+    // Health & Demographics
+    bloodGroup: student.bloodGroup,
+    allergies: student.allergies,
+    medicalNotes: student.medicalNotes,
+    boardingStatus: student.boardingStatus,
+    previousSchool: student.previousSchool,
+
     address: student.address,
     photoColor: student.photoColor,
     enrolmentId: enrolment?.id ?? null,
@@ -88,23 +110,28 @@ export async function listStudents(
   const accessScope = await getAcademicAccessScope(userId, roleSlug);
   if (accessScope === "NONE") return [];
   const where: any = {};
-  if (filters.search)
+  if (filters.search) {
     where.OR = [
       { firstName: { contains: filters.search, mode: "insensitive" } },
       { lastName: { contains: filters.search, mode: "insensitive" } },
       { admissionNo: { contains: filters.search, mode: "insensitive" } },
     ];
-  if (filters.status && filters.status !== "all")
+  }
+  if (filters.status && filters.status !== "all") {
     where.status = filters.status.toUpperCase();
+  }
   const enrolmentWhere: any = {
     academicYear: { status: AcademicYearStatus.ACTIVE },
   };
-  if (filters.classSectionId && filters.classSectionId !== "all")
+  if (filters.classSectionId && filters.classSectionId !== "all") {
     enrolmentWhere.classSectionId = filters.classSectionId;
-  if (accessScope === "ASSIGNED")
+  }
+  if (accessScope === "ASSIGNED") {
     enrolmentWhere.classSection = { classTeacherId: userId };
-  if (Object.keys(enrolmentWhere).length)
+  }
+  if (Object.keys(enrolmentWhere).length) {
     where.enrolments = { some: enrolmentWhere };
+  }
   const students = await prisma.student.findMany({
     where,
     include: activeEnrolmentInclude(),
@@ -144,10 +171,32 @@ export async function createStudent(input: {
   lastName: string;
   gender: string;
   dob: Date;
+  avatarUrl?: string | null;
+  
+  // Primary Guardian
   guardianName: string;
   guardianPhone: string;
   guardianRelation: string;
   guardianEmail?: string | null;
+  
+  // Secondary Guardian
+  guardian2Name?: string | null;
+  guardian2Phone?: string | null;
+  guardian2Relation?: string | null;
+  guardian2Email?: string | null;
+  
+  // Emergency Contact
+  emergencyName?: string | null;
+  emergencyPhone?: string | null;
+  emergencyRelation?: string | null;
+  
+  // Health & Demographics
+  bloodGroup?: string | null;
+  allergies?: string | null;
+  medicalNotes?: string | null;
+  boardingStatus?: string;
+  previousSchool?: string | null;
+  
   address: string;
   classSectionId?: string;
   classId?: string;
@@ -208,10 +257,32 @@ export async function createStudent(input: {
         lastName: input.lastName,
         gender: input.gender,
         dob: input.dob,
+        avatarUrl: input.avatarUrl || null,
+        
+        // Primary Guardian
         guardianName: input.guardianName,
         guardianPhone: input.guardianPhone,
         guardianRelation: input.guardianRelation,
         guardianEmail: input.guardianEmail || null,
+        
+        // Secondary Guardian
+        guardian2Name: input.guardian2Name || null,
+        guardian2Phone: input.guardian2Phone || null,
+        guardian2Relation: input.guardian2Relation || null,
+        guardian2Email: input.guardian2Email || null,
+        
+        // Emergency Contact
+        emergencyName: input.emergencyName || null,
+        emergencyPhone: input.emergencyPhone || null,
+        emergencyRelation: input.emergencyRelation || null,
+        
+        // Health & Demographics
+        bloodGroup: input.bloodGroup || null,
+        allergies: input.allergies || null,
+        medicalNotes: input.medicalNotes || null,
+        boardingStatus: input.boardingStatus || "DAY",
+        previousSchool: input.previousSchool || null,
+        
         address: input.address,
         photoColor: colors[Math.floor(Math.random() * colors.length)],
         enrolments: {
@@ -241,10 +312,32 @@ export async function updateStudent(
     gender?: string;
     dob?: Date;
     status?: "ACTIVE" | "GRADUATED" | "WITHDRAWN" | "TRANSFERRED";
+    avatarUrl?: string | null;
+    
+    // Primary Guardian
     guardianName?: string;
     guardianPhone?: string;
     guardianRelation?: string;
     guardianEmail?: string | null;
+    
+    // Secondary Guardian
+    guardian2Name?: string | null;
+    guardian2Phone?: string | null;
+    guardian2Relation?: string | null;
+    guardian2Email?: string | null;
+    
+    // Emergency Contact
+    emergencyName?: string | null;
+    emergencyPhone?: string | null;
+    emergencyRelation?: string | null;
+    
+    // Health & Demographics
+    bloodGroup?: string | null;
+    allergies?: string | null;
+    medicalNotes?: string | null;
+    boardingStatus?: string;
+    previousSchool?: string | null;
+    
     address?: string;
     classSectionId?: string;
     classId?: string;
@@ -296,6 +389,9 @@ export async function updateStudent(
         ...(input.status !== undefined && {
           status: input.status as StudentStatus,
         }),
+        ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
+        
+        // Primary Guardian
         ...(input.guardianName !== undefined && {
           guardianName: input.guardianName,
         }),
@@ -308,6 +404,49 @@ export async function updateStudent(
         ...(input.guardianEmail !== undefined && {
           guardianEmail: input.guardianEmail || null,
         }),
+        
+        // Secondary Guardian
+        ...(input.guardian2Name !== undefined && {
+          guardian2Name: input.guardian2Name || null,
+        }),
+        ...(input.guardian2Phone !== undefined && {
+          guardian2Phone: input.guardian2Phone || null,
+        }),
+        ...(input.guardian2Relation !== undefined && {
+          guardian2Relation: input.guardian2Relation || null,
+        }),
+        ...(input.guardian2Email !== undefined && {
+          guardian2Email: input.guardian2Email || null,
+        }),
+        
+        // Emergency Contact
+        ...(input.emergencyName !== undefined && {
+          emergencyName: input.emergencyName || null,
+        }),
+        ...(input.emergencyPhone !== undefined && {
+          emergencyPhone: input.emergencyPhone || null,
+        }),
+        ...(input.emergencyRelation !== undefined && {
+          emergencyRelation: input.emergencyRelation || null,
+        }),
+        
+        // Health & Demographics
+        ...(input.bloodGroup !== undefined && {
+          bloodGroup: input.bloodGroup || null,
+        }),
+        ...(input.allergies !== undefined && {
+          allergies: input.allergies || null,
+        }),
+        ...(input.medicalNotes !== undefined && {
+          medicalNotes: input.medicalNotes || null,
+        }),
+        ...(input.boardingStatus !== undefined && {
+          boardingStatus: input.boardingStatus || "DAY",
+        }),
+        ...(input.previousSchool !== undefined && {
+          previousSchool: input.previousSchool || null,
+        }),
+        
         ...(input.address !== undefined && { address: input.address }),
       },
     });

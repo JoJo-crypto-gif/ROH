@@ -4,6 +4,7 @@ import { authenticate } from "../../middleware/authenticate.js";
 import { authorize } from "../../middleware/authorize.js";
 import * as studentsService from "./students.service.js";
 import { createStudentSchema, updateStudentSchema } from "./students.schema.js";
+import { saveStudentAvatar } from "./students-storage.service.js";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/errors.js";
 
@@ -49,14 +50,30 @@ router.get("/:id", authorize("students.view"), async (req: Request, res: Respons
 
 router.post("/", authorize("students.create"), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const student = await studentsService.createStudent(createStudentSchema.parse(req.body));
+    const parsed = createStudentSchema.parse(req.body);
+    let avatarUrl = parsed.avatarUrl;
+    if (parsed.avatarBase64) {
+      avatarUrl = await saveStudentAvatar(parsed.avatarBase64);
+    }
+    const student = await studentsService.createStudent({
+      ...parsed,
+      avatarUrl,
+    });
     res.status(201).json({ student });
   } catch (error) { next(error); }
 });
 
 router.patch("/:id", authorize("students.update"), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const student = await studentsService.updateStudent(req.params.id as string, updateStudentSchema.parse(req.body));
+    const parsed = updateStudentSchema.parse(req.body);
+    let avatarUrl = parsed.avatarUrl;
+    if (parsed.avatarBase64) {
+      avatarUrl = await saveStudentAvatar(parsed.avatarBase64);
+    }
+    const student = await studentsService.updateStudent(req.params.id as string, {
+      ...parsed,
+      ...(avatarUrl !== undefined && { avatarUrl }),
+    });
     res.json({ student });
   } catch (error) { next(error); }
 });
