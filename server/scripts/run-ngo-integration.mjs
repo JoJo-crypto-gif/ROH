@@ -5,7 +5,7 @@ const testUrl = process.env.TEST_DATABASE_URL;
 const developmentUrl = process.env.DATABASE_URL;
 
 if (!testUrl) {
-  console.error("TEST_DATABASE_URL is required for finance integration tests.");
+  console.error("TEST_DATABASE_URL is required for NGO integration tests.");
   process.exit(1);
 }
 
@@ -32,14 +32,9 @@ const env = {
   NODE_ENV: "test",
   DATABASE_URL: testUrl,
   JWT_ACCESS_SECRET:
-    process.env.JWT_ACCESS_SECRET || "finance-integration-access-secret",
+    process.env.JWT_ACCESS_SECRET || "ngo-integration-access-secret",
   JWT_REFRESH_SECRET:
-    process.env.JWT_REFRESH_SECRET || "finance-integration-refresh-secret",
-  FINANCE_STORAGE_DIR:
-    process.env.FINANCE_STORAGE_DIR || "/tmp/lumen-finance-integration",
-  ACCOUNTING_STORAGE_DIR:
-    process.env.ACCOUNTING_STORAGE_DIR || "/tmp/lumen-accounting-integration",
-  SCHOOL_ACCOUNTING_ENABLED: "true",
+    process.env.JWT_REFRESH_SECRET || "ngo-integration-refresh-secret",
 };
 
 const migrate = spawnSync("npx", ["prisma", "migrate", "deploy"], {
@@ -51,7 +46,7 @@ if (migrate.status !== 0) process.exit(migrate.status ?? 1);
 
 const tests = spawnSync(
   process.execPath,
-  ["--test", "--import", "tsx", "src/modules/finance/finance.integration.ts"],
+  ["--test", "--import", "tsx", "src/modules/ngo/ngo.integration.ts"],
   { cwd: process.cwd(), env, stdio: "inherit" },
 );
 process.exit(tests.status ?? 1);

@@ -34,6 +34,9 @@ import { Route as AppAccountingRouteImport } from './routes/_app/accounting'
 import { Route as AppAcademicRouteImport } from './routes/_app/academic'
 import { Route as AppStudentsIndexRouteImport } from './routes/_app/students.index'
 import { Route as AppStudentsStudentIdRouteImport } from './routes/_app/students.$studentId'
+import { Route as AppNgoCentresRouteImport } from './routes/_app/ngo_.centres'
+import { Route as AppNgoBeneficiariesIndexRouteImport } from './routes/_app/ngo_.beneficiaries.index'
+import { Route as AppNgoBeneficiariesBeneficiaryIdRouteImport } from './routes/_app/ngo_.beneficiaries.$beneficiaryId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -159,6 +162,23 @@ const AppStudentsStudentIdRoute = AppStudentsStudentIdRouteImport.update({
   path: '/students/$studentId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppNgoCentresRoute = AppNgoCentresRouteImport.update({
+  id: '/ngo_/centres',
+  path: '/ngo/centres',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNgoBeneficiariesIndexRoute =
+  AppNgoBeneficiariesIndexRouteImport.update({
+    id: '/ngo_/beneficiaries/',
+    path: '/ngo/beneficiaries/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppNgoBeneficiariesBeneficiaryIdRoute =
+  AppNgoBeneficiariesBeneficiaryIdRouteImport.update({
+    id: '/ngo_/beneficiaries/$beneficiaryId',
+    path: '/ngo/beneficiaries/$beneficiaryId',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -183,8 +203,11 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
   '/users': typeof AppUsersRoute
+  '/ngo/centres': typeof AppNgoCentresRoute
   '/students/$studentId': typeof AppStudentsStudentIdRoute
   '/students/': typeof AppStudentsIndexRoute
+  '/ngo/beneficiaries/$beneficiaryId': typeof AppNgoBeneficiariesBeneficiaryIdRoute
+  '/ngo/beneficiaries/': typeof AppNgoBeneficiariesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -209,8 +232,11 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
   '/users': typeof AppUsersRoute
+  '/ngo/centres': typeof AppNgoCentresRoute
   '/students/$studentId': typeof AppStudentsStudentIdRoute
   '/students': typeof AppStudentsIndexRoute
+  '/ngo/beneficiaries/$beneficiaryId': typeof AppNgoBeneficiariesBeneficiaryIdRoute
+  '/ngo/beneficiaries': typeof AppNgoBeneficiariesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -237,8 +263,11 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/staff': typeof AppStaffRoute
   '/_app/users': typeof AppUsersRoute
+  '/_app/ngo_/centres': typeof AppNgoCentresRoute
   '/_app/students/$studentId': typeof AppStudentsStudentIdRoute
   '/_app/students/': typeof AppStudentsIndexRoute
+  '/_app/ngo_/beneficiaries/$beneficiaryId': typeof AppNgoBeneficiariesBeneficiaryIdRoute
+  '/_app/ngo_/beneficiaries/': typeof AppNgoBeneficiariesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -265,8 +294,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/staff'
     | '/users'
+    | '/ngo/centres'
     | '/students/$studentId'
     | '/students/'
+    | '/ngo/beneficiaries/$beneficiaryId'
+    | '/ngo/beneficiaries/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -291,8 +323,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/staff'
     | '/users'
+    | '/ngo/centres'
     | '/students/$studentId'
     | '/students'
+    | '/ngo/beneficiaries/$beneficiaryId'
+    | '/ngo/beneficiaries'
   id:
     | '__root__'
     | '/'
@@ -318,8 +353,11 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/staff'
     | '/_app/users'
+    | '/_app/ngo_/centres'
     | '/_app/students/$studentId'
     | '/_app/students/'
+    | '/_app/ngo_/beneficiaries/$beneficiaryId'
+    | '/_app/ngo_/beneficiaries/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -506,6 +544,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppStudentsStudentIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/ngo_/centres': {
+      id: '/_app/ngo_/centres'
+      path: '/ngo/centres'
+      fullPath: '/ngo/centres'
+      preLoaderRoute: typeof AppNgoCentresRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/ngo_/beneficiaries/': {
+      id: '/_app/ngo_/beneficiaries/'
+      path: '/ngo/beneficiaries'
+      fullPath: '/ngo/beneficiaries/'
+      preLoaderRoute: typeof AppNgoBeneficiariesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/ngo_/beneficiaries/$beneficiaryId': {
+      id: '/_app/ngo_/beneficiaries/$beneficiaryId'
+      path: '/ngo/beneficiaries/$beneficiaryId'
+      fullPath: '/ngo/beneficiaries/$beneficiaryId'
+      preLoaderRoute: typeof AppNgoBeneficiariesBeneficiaryIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -529,8 +588,11 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppStaffRoute: typeof AppStaffRoute
   AppUsersRoute: typeof AppUsersRoute
+  AppNgoCentresRoute: typeof AppNgoCentresRoute
   AppStudentsStudentIdRoute: typeof AppStudentsStudentIdRoute
   AppStudentsIndexRoute: typeof AppStudentsIndexRoute
+  AppNgoBeneficiariesBeneficiaryIdRoute: typeof AppNgoBeneficiariesBeneficiaryIdRoute
+  AppNgoBeneficiariesIndexRoute: typeof AppNgoBeneficiariesIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -553,8 +615,11 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppStaffRoute: AppStaffRoute,
   AppUsersRoute: AppUsersRoute,
+  AppNgoCentresRoute: AppNgoCentresRoute,
   AppStudentsStudentIdRoute: AppStudentsStudentIdRoute,
   AppStudentsIndexRoute: AppStudentsIndexRoute,
+  AppNgoBeneficiariesBeneficiaryIdRoute: AppNgoBeneficiariesBeneficiaryIdRoute,
+  AppNgoBeneficiariesIndexRoute: AppNgoBeneficiariesIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

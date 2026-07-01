@@ -10,6 +10,11 @@ function optional(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
+function optionalBoolean(key: string, fallback = false): boolean {
+  const value = process.env[key];
+  return value == null ? fallback : value.toLowerCase() === "true";
+}
+
 export const config = {
   env: optional("NODE_ENV", "development"),
   port: Number(optional("PORT", "4000")),
@@ -36,11 +41,16 @@ export const config = {
   },
 
   accounting: {
+    enabled: optionalBoolean("SCHOOL_ACCOUNTING_ENABLED", false),
     storageDir: optional("ACCOUNTING_STORAGE_DIR", "./storage/accounting"),
   },
 
   students: {
     storageDir: optional("STUDENTS_STORAGE_DIR", "./storage/students-pfp"),
+  },
+
+  ngo: {
+    storageDir: optional("NGO_STORAGE_DIR", "./storage/beneficiaries"),
   },
 
   email: {

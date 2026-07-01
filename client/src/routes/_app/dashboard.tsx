@@ -7,7 +7,6 @@ import {
   CalendarCheck,
   ClipboardCheck,
   GraduationCap,
-  Landmark,
   ShieldAlert,
   Sparkles,
   UserPlus,
@@ -39,7 +38,6 @@ const widgetOrders: Record<ApiDashboard["focus"], WidgetKey[]> = {
     "promotions",
     "staff",
     "finance",
-    "accounting",
   ],
   LEADERSHIP: [
     "academic",
@@ -50,7 +48,6 @@ const widgetOrders: Record<ApiDashboard["focus"], WidgetKey[]> = {
     "students",
     "staff",
     "finance",
-    "accounting",
   ],
   ADMINISTRATION: [
     "students",
@@ -61,11 +58,9 @@ const widgetOrders: Record<ApiDashboard["focus"], WidgetKey[]> = {
     "reports",
     "promotions",
     "finance",
-    "accounting",
   ],
   GENERAL: [
     "finance",
-    "accounting",
     "students",
     "academic",
     "attendance",
@@ -87,8 +82,6 @@ const actionRoutes = {
   "academic-setup": "/academic",
   "manage-fees": "/fees",
   "record-payment": "/payments",
-  "record-expense": "/accounting",
-  "prepare-journal": "/accounting",
 } as const;
 
 function Dashboard() {
@@ -392,44 +385,6 @@ function Widget({ type, dashboard }: { type: WidgetKey; dashboard: ApiDashboard 
         </Panel>
       );
     }
-    case "accounting": {
-      const data = dashboard.widgets.accounting!;
-      return (
-        <Panel title="School accounting" icon={Landmark} href="/accounting">
-          {data.available ? (
-            <>
-              <Metric
-                value={new Intl.NumberFormat("en-GH", {
-                  style: "currency",
-                  currency: "GHS",
-                }).format(data.cashPosition)}
-                label="Cash position"
-              />
-              <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
-                <SmallMetric
-                  value={new Intl.NumberFormat("en-GH", {
-                    style: "currency",
-                    currency: "GHS",
-                    notation: "compact",
-                  }).format(data.receivables)}
-                  label="Receivables"
-                />
-                <SmallMetric
-                  value={new Intl.NumberFormat("en-GH", {
-                    style: "currency",
-                    currency: "GHS",
-                    notation: "compact",
-                  }).format(data.payables)}
-                  label="Payables"
-                />
-              </div>
-            </>
-          ) : (
-            <Unavailable reason={data.reason} />
-          )}
-        </Panel>
-      );
-    }
   }
 }
 
@@ -449,8 +404,7 @@ function Panel({
     | "/gradebook"
     | "/reports"
     | "/promotions"
-    | "/fees"
-    | "/accounting";
+    | "/fees";
   children: ReactNode;
 }) {
   return (

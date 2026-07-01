@@ -12,7 +12,6 @@ import {
   type AcademicAccessScope,
 } from "../academic/services/access.service.js";
 import { getFinanceSummary } from "../finance/finance.service.js";
-import { getAccountingSummary } from "../accounting/accounting.service.js";
 
 const ACADEMIC_PERMISSIONS = [
   "academic.view",
@@ -186,18 +185,6 @@ export function buildDashboardActions(
     label: "Record payment",
     description: "Allocate a student payment and issue a receipt.",
     to: "/payments",
-  });
-  add("expenses.create", {
-    id: "record-expense",
-    label: "Prepare expense",
-    description: "Create an expense for approval and payment.",
-    to: "/accounting",
-  });
-  add("journals.create", {
-    id: "prepare-journal",
-    label: "Prepare journal",
-    description: "Create a balanced manual journal for approval.",
-    to: "/accounting",
   });
   return actions;
 }
@@ -597,10 +584,6 @@ export async function getDashboard(
     hasPermission(permissions, "payments.view")
   ) {
     widgets.finance = await getFinanceSummary();
-  }
-
-  if (hasPermission(permissions, "accounting.view")) {
-    widgets.accounting = await getAccountingSummary();
   }
 
   const actions = buildDashboardActions(permissionList, {

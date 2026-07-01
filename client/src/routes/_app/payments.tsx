@@ -8,7 +8,7 @@ import { Forbidden } from "@/components/layout/Forbidden";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import { accountingApi, financeApi, studentsApi } from "@/lib/api";
+import { financeApi, studentsApi } from "@/lib/api";
 import { hasPermission } from "@/lib/rbac";
 
 export const Route = createFileRoute("/_app/payments")({
@@ -33,27 +33,12 @@ function PaymentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("CASH");
-  const [moneyAccountId, setMoneyAccountId] = useState("");
   const [reference, setReference] = useState("");
   const [creditLotId, setCreditLotId] = useState("");
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const canReverse = hasPermission(user, "payments.reverse");
   const canApproveReversals = hasPermission(user, "payments.reverse.approve");
   const canRecord = hasPermission(user, "payments.record");
-  const moneyAccounts = useQuery({
-    queryKey: ["accounting-money-accounts"],
-    queryFn: accountingApi.getMoneyAccounts,
-    enabled: canRecord && showForm,
-  });
-  useEffect(() => {
-    const available = moneyAccounts.data?.moneyAccounts ?? [];
-    const current = available.find((account) => account.id === moneyAccountId);
-    if (current) return;
-    const mapped = available.find((account) =>
-      account.methodMappings?.some((mapping) => mapping.method === method),
-    );
-    setMoneyAccountId(mapped?.id ?? available[0]?.id ?? "");
-  }, [method, moneyAccountId, moneyAccounts.data?.moneyAccounts]);
   const students = useQuery({
     queryKey: ["finance-payment-students", search],
     queryFn: () => studentsApi.list({ search }),
@@ -94,7 +79,6 @@ function PaymentsPage() {
         studentId,
         amount: Number(amount),
         method,
-        moneyAccountId: moneyAccountId || null,
         transactionRef: method === "CASH" ? null : reference,
         idempotencyKey: crypto.randomUUID(),
         allocations: Object.entries(allocations)
@@ -306,7 +290,7 @@ function PaymentsPage() {
                   </table>
                 </div>
                 <form
-                  className="mt-4 grid gap-3 border-t pt-4 md:grid-cols-5"
+                  className="mt-4 grid gap-3 border-t pt-4 md:grid-cols-4"
                   onSubmit={(e) => {
                     e.preventDefault();
                     payment.mutate();
@@ -330,18 +314,6 @@ function PaymentsPage() {
                     <option value="MOBILE_MONEY">Mobile money</option>
                     <option value="BANK_TRANSFER">Bank transfer</option>
                     <option value="CARD">Card</option>
-                  </select>
-                  <select
-                    className={field}
-                    value={moneyAccountId}
-                    onChange={(e) => setMoneyAccountId(e.target.value)}
-                  >
-                    <option value="">Default money account</option>
-                    {moneyAccounts.data?.moneyAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name}
-                      </option>
-                    ))}
                   </select>
                   {method !== "CASH" ? (
                     <input

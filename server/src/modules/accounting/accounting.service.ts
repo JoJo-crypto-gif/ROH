@@ -16,6 +16,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/errors.js";
+import { config } from "../../config.js";
 import { generateFinancePdf } from "../finance/finance-pdf.service.js";
 import {
   readAccountingDocument,
@@ -508,7 +509,10 @@ export async function setAccountingPeriodStatus(
       where: { id: periodId },
       include: { fiscalYear: { include: { book: true } } },
     });
-    if (!period || period.fiscalYear.book.domain !== AccountingBookDomain.SCHOOL)
+    if (
+      !period ||
+      period.fiscalYear.book.domain !== AccountingBookDomain.SCHOOL
+    )
       throw AppError.notFound("Accounting period not found.");
     if (period.status === status) return period;
     if (status === AccountingPeriodStatus.CLOSED) {
@@ -531,7 +535,13 @@ export async function setAccountingPeriodStatus(
         closedById: status === AccountingPeriodStatus.CLOSED ? actorId : null,
       },
     });
-    await audit(tx, actorId, `ACCOUNTING_PERIOD_${status}`, "AccountingPeriod", periodId);
+    await audit(
+      tx,
+      actorId,
+      `ACCOUNTING_PERIOD_${status}`,
+      "AccountingPeriod",
+      periodId,
+    );
     return updated;
   });
 }
@@ -1058,10 +1068,14 @@ export async function addExpenseAttachment(
   const expense = await prisma.expense.findUnique({ where: { id: expenseId } });
   if (!expense) throw AppError.notFound("Expense not found.");
   if (expense.status !== ExpenseStatus.DRAFT)
-    throw AppError.badRequest("Attachments can only be added while an expense is draft.");
+    throw AppError.badRequest(
+      "Attachments can only be added while an expense is draft.",
+    );
   const data = Buffer.from(input.contentBase64, "base64");
   if (!data.length || data.length > 10_000_000)
-    throw AppError.badRequest("Expense attachments must be between 1 byte and 10 MB.");
+    throw AppError.badRequest(
+      "Expense attachments must be between 1 byte and 10 MB.",
+    );
   const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const checksum = crypto.createHash("sha256").update(data).digest("hex");
   const storagePath = `expenses/${expenseId}/${crypto.randomUUID()}-${filename}`;
@@ -1084,12 +1098,18 @@ export async function addExpenseAttachment(
   });
 }
 
-export async function getExpenseAttachment(expenseId: string, attachmentId: string) {
+export async function getExpenseAttachment(
+  expenseId: string,
+  attachmentId: string,
+) {
   const attachment = await prisma.expenseAttachment.findFirst({
     where: { id: attachmentId, expenseId },
   });
   if (!attachment) throw AppError.notFound("Expense attachment not found.");
-  return { ...attachment, data: await readAccountingDocument(attachment.storagePath) };
+  return {
+    ...attachment,
+    data: await readAccountingDocument(attachment.storagePath),
+  };
 }
 
 export async function createExpense(
@@ -1609,7 +1629,11 @@ export async function matchReconciliation(
 
 export async function createReconciliationDraftJournal(
   actorId: string,
-  input: { statementLineId: string; offsetAccountId: string; description: string },
+  input: {
+    statementLineId: string;
+    offsetAccountId: string;
+    description: string;
+  },
 ) {
   return prisma.$transaction(async (tx) => {
     const statement = await tx.bankStatementLine.findUnique({
@@ -1623,21 +1647,43 @@ export async function createReconciliationDraftJournal(
     );
     const available = statement.amount.abs().minus(matched);
     if (available.lte(0))
-      throw AppError.badRequest("This statement line is already fully matched.");
+      throw AppError.badRequest(
+        "This statement line is already fully matched.",
+      );
     const book = await schoolBook(tx);
-    const offset = await tx.account.findUnique({ where: { id: input.offsetAccountId } });
-    if (!offset?.active || offset.bookId !== book.id || offset.id === statement.moneyAccount.accountId)
-      throw AppError.badRequest("Select another active account for the draft journal.");
-    const { fiscalYear, period } = await findFiscalYear(tx, book.id, statement.date);
+    const offset = await tx.account.findUnique({
+      where: { id: input.offsetAccountId },
+    });
+    if (
+      !offset?.active ||
+      offset.bookId !== book.id ||
+      offset.id === statement.moneyAccount.accountId
+    )
+      throw AppError.badRequest(
+        "Select another active account for the draft journal.",
+      );
+    const { fiscalYear, period } = await findFiscalYear(
+      tx,
+      book.id,
+      statement.date,
+    );
     const incoming = statement.amount.gt(0);
     const lines: PostingLine[] = incoming
       ? [
-          { accountId: statement.moneyAccount.accountId, debit: available, credit: ZERO },
+          {
+            accountId: statement.moneyAccount.accountId,
+            debit: available,
+            credit: ZERO,
+          },
           { accountId: offset.id, debit: ZERO, credit: available },
         ]
       : [
           { accountId: offset.id, debit: available, credit: ZERO },
-          { accountId: statement.moneyAccount.accountId, debit: ZERO, credit: available },
+          {
+            accountId: statement.moneyAccount.accountId,
+            debit: ZERO,
+            credit: available,
+          },
         ];
     validateLines(lines);
     const journal = await tx.journalEntry.create({
@@ -1656,9 +1702,16 @@ export async function createReconciliationDraftJournal(
       },
       include: { lines: { include: { account: true } } },
     });
-    await audit(tx, actorId, "RECONCILIATION_DRAFT_CREATED", "JournalEntry", journal.id, {
-      statementLineId: statement.id,
-    });
+    await audit(
+      tx,
+      actorId,
+      "RECONCILIATION_DRAFT_CREATED",
+      "JournalEntry",
+      journal.id,
+      {
+        statementLineId: statement.id,
+      },
+    );
     return journal;
   });
 }
@@ -1839,19 +1892,23 @@ export async function getAccountingReports(filters: {
   const assets = typeBalance(AccountType.ASSET);
   const liabilities = typeBalance(AccountType.LIABILITY).negated();
   const equity = typeBalance(AccountType.EQUITY).negated();
-  const [moneyAccounts, expenseRows, statementLines, controls] = await Promise.all([
-    prisma.moneyAccount.findMany({ include: { account: true }, orderBy: { name: "asc" } }),
-    prisma.expense.findMany({
-      where: { fiscalYearId: fiscalYear.id },
-      include: { payments: { where: { reversedAt: null } } },
-      orderBy: { date: "asc" },
-    }),
-    prisma.bankStatementLine.findMany({
-      include: { matches: true, moneyAccount: true },
-      orderBy: { date: "asc" },
-    }),
-    prisma.$transaction((tx) => openingControlBalances(tx)),
-  ]);
+  const [moneyAccounts, expenseRows, statementLines, controls] =
+    await Promise.all([
+      prisma.moneyAccount.findMany({
+        include: { account: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.expense.findMany({
+        where: { fiscalYearId: fiscalYear.id },
+        include: { payments: { where: { reversedAt: null } } },
+        orderBy: { date: "asc" },
+      }),
+      prisma.bankStatementLine.findMany({
+        include: { matches: true, moneyAccount: true },
+        orderBy: { date: "asc" },
+      }),
+      prisma.$transaction((tx) => openingControlBalances(tx)),
+    ]);
   const generalLedger = lines.map((line) => ({
     id: line.id,
     accountId: line.accountId,
@@ -1863,16 +1920,25 @@ export async function getAccountingReports(filters: {
     debit: number(line.debit),
     credit: number(line.credit),
   }));
-  const moneyByAccount = new Map(moneyAccounts.map((item) => [item.accountId, item]));
+  const moneyByAccount = new Map(
+    moneyAccounts.map((item) => [item.accountId, item]),
+  );
   const reconciliationByAccount = moneyAccounts.map((moneyAccount) => {
-    const accountLines = statementLines.filter((line) => line.moneyAccountId === moneyAccount.id);
+    const accountLines = statementLines.filter(
+      (line) => line.moneyAccountId === moneyAccount.id,
+    );
     const statementAmount = accountLines.reduce(
       (sum, line) => sum.plus(line.amount.abs()),
       ZERO,
     );
     const matchedAmount = accountLines.reduce(
       (sum, line) =>
-        sum.plus(line.matches.reduce((matched, item) => matched.plus(item.amount), ZERO)),
+        sum.plus(
+          line.matches.reduce(
+            (matched, item) => matched.plus(item.amount),
+            ZERO,
+          ),
+        ),
       ZERO,
     );
     return {
@@ -1881,14 +1947,16 @@ export async function getAccountingReports(filters: {
       statementAmount: number(statementAmount),
       matchedAmount: number(matchedAmount),
       unmatchedAmount: number(statementAmount.minus(matchedAmount)),
-      unmatchedLines: accountLines.filter((line) => line.matches.length === 0).length,
+      unmatchedLines: accountLines.filter((line) => line.matches.length === 0)
+        .length,
     };
   });
   const receivableAccount = accounts.find(
     (account) => account.systemKey === AccountSystemKey.ACCOUNTS_RECEIVABLE,
   );
   const receivableLedgerBalance = receivableAccount
-    ? trialBalance.find((row) => row.account.id === receivableAccount.id)?.balance ?? 0
+    ? (trialBalance.find((row) => row.account.id === receivableAccount.id)
+        ?.balance ?? 0)
     : 0;
   return {
     book,
@@ -1913,14 +1981,19 @@ export async function getAccountingReports(filters: {
       status: expense.status,
       total: number(expense.total),
       paid: number(
-        expense.payments.reduce((sum, payment) => sum.plus(payment.amount), ZERO),
+        expense.payments.reduce(
+          (sum, payment) => sum.plus(payment.amount),
+          ZERO,
+        ),
       ),
     })),
     reconciliationSummary: reconciliationByAccount,
     receivableControl: {
       ledgerBalance: number(receivableLedgerBalance),
       financeOutstanding: number(controls.outstanding),
-      difference: number(decimal(receivableLedgerBalance).minus(controls.outstanding)),
+      difference: number(
+        decimal(receivableLedgerBalance).minus(controls.outstanding),
+      ),
       reconciled: decimal(receivableLedgerBalance).eq(controls.outstanding),
     },
     incomeStatement: {
@@ -1973,48 +2046,60 @@ export async function generateAccountingReportPdf(
             debit: row.debit,
             credit: row.credit,
           }))
-      : type === "expense-register"
-        ? report.expenseRegister.map((row) => ({
-            label: `${row.number} · ${row.payee}`,
-            context: `${isoDate(row.date)} · ${row.status} · ${row.description}`,
-            debit: row.total,
-            credit: row.paid,
-            balance: row.total - row.paid,
-          }))
-      : type === "reconciliation-summary"
-        ? report.reconciliationSummary.map((row) => ({
-            label: row.name,
-            debit: row.statementAmount,
-            credit: row.matchedAmount,
-            balance: row.unmatchedAmount,
-          }))
-      : type === "receivable-control"
-        ? [
-            {
-              label: "Student fee receivable control",
-              debit: report.receivableControl.ledgerBalance,
-              credit: report.receivableControl.financeOutstanding,
-              balance: report.receivableControl.difference,
-            },
-          ]
-      : type === "trial-balance"
-        ? report.trialBalance.map((row) => ({
-            label: `${row.account.code} ${row.account.name}`,
-            debit: row.debit,
-            credit: row.credit,
-            balance: row.balance,
-          }))
-        : type === "income-statement"
-          ? [
-              { label: "Fee and other income", credit: report.incomeStatement.income },
-              { label: "Expenses", debit: report.incomeStatement.expenses },
-              { label: "Surplus / (deficit)", balance: report.incomeStatement.surplus },
-            ]
-          : [
-              { label: "Assets", debit: report.balanceSheet.assets },
-              { label: "Liabilities", credit: report.balanceSheet.liabilities },
-              { label: "Equity", credit: report.balanceSheet.equity },
-            ];
+        : type === "expense-register"
+          ? report.expenseRegister.map((row) => ({
+              label: `${row.number} · ${row.payee}`,
+              context: `${isoDate(row.date)} · ${row.status} · ${row.description}`,
+              debit: row.total,
+              credit: row.paid,
+              balance: row.total - row.paid,
+            }))
+          : type === "reconciliation-summary"
+            ? report.reconciliationSummary.map((row) => ({
+                label: row.name,
+                debit: row.statementAmount,
+                credit: row.matchedAmount,
+                balance: row.unmatchedAmount,
+              }))
+            : type === "receivable-control"
+              ? [
+                  {
+                    label: "Student fee receivable control",
+                    debit: report.receivableControl.ledgerBalance,
+                    credit: report.receivableControl.financeOutstanding,
+                    balance: report.receivableControl.difference,
+                  },
+                ]
+              : type === "trial-balance"
+                ? report.trialBalance.map((row) => ({
+                    label: `${row.account.code} ${row.account.name}`,
+                    debit: row.debit,
+                    credit: row.credit,
+                    balance: row.balance,
+                  }))
+                : type === "income-statement"
+                  ? [
+                      {
+                        label: "Fee and other income",
+                        credit: report.incomeStatement.income,
+                      },
+                      {
+                        label: "Expenses",
+                        debit: report.incomeStatement.expenses,
+                      },
+                      {
+                        label: "Surplus / (deficit)",
+                        balance: report.incomeStatement.surplus,
+                      },
+                    ]
+                  : [
+                      { label: "Assets", debit: report.balanceSheet.assets },
+                      {
+                        label: "Liabilities",
+                        credit: report.balanceSheet.liabilities,
+                      },
+                      { label: "Equity", credit: report.balanceSheet.equity },
+                    ];
   const titles = {
     "trial-balance": "Trial Balance",
     "general-ledger": "General Ledger",
@@ -2033,7 +2118,10 @@ export async function generateAccountingReportPdf(
       phone: school?.phone,
       email: school?.email,
     },
-    student: { name: "School accounting book", admissionNo: report.fiscalYear.name },
+    student: {
+      name: "School accounting book",
+      admissionNo: report.fiscalYear.name,
+    },
     generatedAt: new Date().toISOString(),
     lines: rows,
     totals:
@@ -2041,15 +2129,23 @@ export async function generateAccountingReportPdf(
         ? [
             {
               label: "Total debits",
-              value: report.trialBalance.reduce((sum, row) => sum + row.debit, 0),
+              value: report.trialBalance.reduce(
+                (sum, row) => sum + row.debit,
+                0,
+              ),
             },
             {
               label: "Total credits",
-              value: report.trialBalance.reduce((sum, row) => sum + row.credit, 0),
+              value: report.trialBalance.reduce(
+                (sum, row) => sum + row.credit,
+                0,
+              ),
             },
           ]
         : [],
-    footer: [report.cutoverNotice, school?.reportFooter].filter(Boolean).join(" "),
+    footer: [report.cutoverNotice, school?.reportFooter]
+      .filter(Boolean)
+      .join(" "),
   });
 }
 
@@ -2095,6 +2191,7 @@ export async function getAccountingSummary() {
 }
 
 async function activePostingBook(tx: Tx, date = new Date()) {
+  if (!config.accounting.enabled) return null;
   const book = await tx.accountingBook.findUnique({
     where: { domain: AccountingBookDomain.SCHOOL },
   });

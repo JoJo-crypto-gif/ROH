@@ -71,6 +71,22 @@ enum SchoolStaffStatus {
   INACTIVE
 }
 
+enum CareCentreStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum BeneficiaryGender {
+  MALE
+  FEMALE
+}
+
+enum BeneficiaryStatus {
+  ACTIVE
+  EXITED
+  TRANSFERRED
+}
+
 enum FeeScheduleKind {
   STANDARD
   SUPPLEMENTAL
@@ -231,6 +247,8 @@ model User {
   requestedReversals     PaymentReversal[]       @relation("ReversalRequester")
   decidedReversals       PaymentReversal[]       @relation("ReversalDecisionMaker")
   financeAuditEntries    FinanceAuditLog[]       @relation("FinanceAuditActor")
+  ngoAuditEntries        NgoAuditLog[]           @relation("NgoAuditActor")
+  managedCareCentres     CareCentre[]            @relation("CareCentreManager")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -328,6 +346,116 @@ model SchoolProfile {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@map("school_profiles")
+}
+
+model CareCentre {
+  id                    String                 @id @default(cuid())
+  code                  String                 @unique
+  name                  String                 @unique
+  description           String?
+  openedAt              DateTime?              @map("opened_at")
+  phone                 String?
+  email                 String?
+  address               String
+  town                  String
+  district              String
+  region                String
+  latitude              Decimal?               @db.Decimal(9, 6)
+  longitude             Decimal?               @db.Decimal(9, 6)
+  capacity              Int
+  managerId             String?                @map("manager_id")
+  status                CareCentreStatus       @default(ACTIVE)
+  manager               User?                  @relation("CareCentreManager", fields: [managerId], references: [id], onDelete: SetNull)
+  beneficiaryPlacements BeneficiaryPlacement[]
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+
+  @@index([status, name])
+  @@index([managerId, status])
+  @@index([region, district])
+  @@map("care_centres")
+}
+
+model Beneficiary {
+  id                        String                 @id @default(cuid())
+  beneficiaryNo             String                 @unique @map("beneficiary_no")
+  fullName                  String                 @map("full_name")
+  dateOfBirth               DateTime               @map("date_of_birth")
+  gender                    BeneficiaryGender
+  admissionDate             DateTime               @map("admission_date")
+  referralSource            String                 @map("referral_source")
+  backgroundSummary         String?                @map("background_summary")
+  status                    BeneficiaryStatus      @default(ACTIVE)
+  educationLevelAtAdmission String?                @map("education_level_at_admission")
+  currentEducationLevel     String?                @map("current_education_level")
+  schoolName                String?                @map("school_name")
+  studentId                 String?                @unique @map("student_id")
+  healthStatus              String                 @map("health_status")
+  healthNotes               String?                @map("health_notes")
+  specialNeeds              String?                @map("special_needs")
+  exitDate                  DateTime?              @map("exit_date")
+  exitReason                String?                @map("exit_reason")
+  additionalNotes           String?                @map("additional_notes")
+  remarks                   String?
+  avatarUrl                 String?                @map("avatar_url")
+  student                   Student?               @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  guardians                 BeneficiaryGuardian[]
+  placements                BeneficiaryPlacement[]
+  createdAt                 DateTime               @default(now()) @map("created_at")
+  updatedAt                 DateTime               @updatedAt @map("updated_at")
+
+  @@index([status, fullName])
+  @@index([admissionDate])
+  @@map("beneficiaries")
+}
+
+model BeneficiaryGuardian {
+  id             String      @id @default(cuid())
+  beneficiaryId  String      @map("beneficiary_id")
+  name           String
+  primaryPhone   String      @map("primary_phone")
+  secondaryPhone String?     @map("secondary_phone")
+  relationship   String
+  sequence       Int
+  beneficiary    Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  @@unique([beneficiaryId, sequence])
+  @@map("beneficiary_guardians")
+}
+
+model BeneficiaryPlacement {
+  id            String      @id @default(cuid())
+  beneficiaryId String      @map("beneficiary_id")
+  careCentreId  String      @map("care_centre_id")
+  startDate     DateTime    @map("start_date")
+  endDate       DateTime?   @map("end_date")
+  endReason     String?     @map("end_reason")
+  active        Boolean     @default(true)
+  beneficiary   Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  careCentre    CareCentre  @relation(fields: [careCentreId], references: [id], onDelete: Restrict)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@index([careCentreId, active])
+  @@index([beneficiaryId, startDate])
+  @@map("beneficiary_placements")
+}
+
+model NgoAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  metadata   Json?
+  actor      User?    @relation("NgoAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("ngo_audit_logs")
 }
 
 model AcademicYear {
@@ -512,46 +640,47 @@ model GradeBand {
 }
 
 model Student {
-  id               String        @id @default(cuid())
-  admissionNo      String        @unique @map("admission_no")
-  firstName        String        @map("first_name")
-  lastName         String        @map("last_name")
-  gender           String
-  dob              DateTime
-  status           StudentStatus @default(ACTIVE)
-  enrolledAt       DateTime      @default(now()) @map("enrolled_at")
-  avatarUrl        String?       @map("avatar_url")
-  
-  // Primary Guardian
-  guardianName     String        @map("guardian_name")
-  guardianPhone    String        @map("guardian_phone")
-  guardianRelation String        @map("guardian_relation")
-  guardianEmail    String?       @map("guardian_email")
-  
-  // Secondary Guardian
-  guardian2Name     String?      @map("guardian2_name")
-  guardian2Phone    String?      @map("guardian2_phone")
-  guardian2Relation String?      @map("guardian2_relation")
-  guardian2Email    String?      @map("guardian2_email")
-  
-  // Emergency Contact
-  emergencyName     String?      @map("emergency_name")
-  emergencyPhone    String?      @map("emergency_phone")
-  emergencyRelation String?      @map("emergency_relation")
-  
-  // Health & Demographics
-  bloodGroup        String?      @map("blood_group")
-  allergies         String?
-  medicalNotes      String?      @map("medical_notes")
-  boardingStatus    String       @default("DAY") @map("boarding_status")
-  previousSchool    String?      @map("previous_school")
+  id          String        @id @default(cuid())
+  admissionNo String        @unique @map("admission_no")
+  firstName   String        @map("first_name")
+  lastName    String        @map("last_name")
+  gender      String
+  dob         DateTime
+  status      StudentStatus @default(ACTIVE)
+  enrolledAt  DateTime      @default(now()) @map("enrolled_at")
+  avatarUrl   String?       @map("avatar_url")
 
-  address          String
-  photoColor       String        @map("photo_color")
+  // Primary Guardian
+  guardianName     String  @map("guardian_name")
+  guardianPhone    String  @map("guardian_phone")
+  guardianRelation String  @map("guardian_relation")
+  guardianEmail    String? @map("guardian_email")
+
+  // Secondary Guardian
+  guardian2Name     String? @map("guardian2_name")
+  guardian2Phone    String? @map("guardian2_phone")
+  guardian2Relation String? @map("guardian2_relation")
+  guardian2Email    String? @map("guardian2_email")
+
+  // Emergency Contact
+  emergencyName     String? @map("emergency_name")
+  emergencyPhone    String? @map("emergency_phone")
+  emergencyRelation String? @map("emergency_relation")
+
+  // Health & Demographics
+  bloodGroup     String? @map("blood_group")
+  allergies      String?
+  medicalNotes   String? @map("medical_notes")
+  boardingStatus String  @default("DAY") @map("boarding_status")
+  previousSchool String? @map("previous_school")
+
+  address    String
+  photoColor String @map("photo_color")
 
   enrolments  StudentEnrolment[]
   feePayments FeePayment[]
   creditLots  StudentCreditLot[]
+  beneficiary Beneficiary?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

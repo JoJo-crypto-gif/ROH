@@ -68,6 +68,10 @@ export type Permission =
   | "dashboard.view"
   // Future modules
   | "ngo.view"
+  | "ngo.centres.view"
+  | "ngo.centres.manage"
+  | "ngo.beneficiaries.view"
+  | "ngo.beneficiaries.manage"
   | "inventory.view";
 
 export type Scope =
@@ -215,6 +219,10 @@ export const ALL_PERMISSIONS: { module: string; items: { key: Permission; label:
     module: "Future modules",
     items: [
       { key: "ngo.view", label: "Access NGO module" },
+      { key: "ngo.centres.view", label: "View NGO care centres" },
+      { key: "ngo.centres.manage", label: "Manage NGO care centres" },
+      { key: "ngo.beneficiaries.view", label: "View NGO beneficiaries" },
+      { key: "ngo.beneficiaries.manage", label: "Manage NGO beneficiaries" },
       { key: "inventory.view", label: "Access inventory" },
     ],
   },
@@ -236,6 +244,20 @@ export const DEFAULT_ROLES: RoleDefinition[] = [
     builtIn: true,
     description: "Manages all school operations.",
     permissions: flat.filter((p) => !p.startsWith("ngo") && !p.startsWith("inventory")),
+  },
+  {
+    id: "ngo-admin",
+    name: "NGO Admin",
+    builtIn: true,
+    description: "Manages NGO care centres and operations.",
+    permissions: [
+      "dashboard.view",
+      "ngo.view",
+      "ngo.centres.view",
+      "ngo.centres.manage",
+      "ngo.beneficiaries.view",
+      "ngo.beneficiaries.manage",
+    ],
   },
   {
     id: "headteacher",

@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorize } from "../../middleware/authorize.js";
+import { config } from "../../config.js";
 import * as accounting from "./accounting.service.js";
 import {
   accountSchema,
@@ -27,6 +28,23 @@ import {
 } from "./accounting.schema.js";
 
 const router = Router();
+export function schoolAccountingAvailability(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!config.accounting.enabled) {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(503).json({
+      error:
+        "School Accounting is paused while requirements are being confirmed.",
+      code: "SCHOOL_ACCOUNTING_PAUSED",
+    });
+    return;
+  }
+  next();
+}
+router.use(schoolAccountingAvailability);
 router.use(authenticate);
 router.use((_req, res, next) => {
   res.setHeader("Cache-Control", "private, no-store");
@@ -379,7 +397,10 @@ router.post(
   route(async (req, res) => {
     const input = reconciliationDraftSchema.parse(req.body);
     res.status(201).json({
-      journal: await accounting.createReconciliationDraftJournal(req.user!.id, input),
+      journal: await accounting.createReconciliationDraftJournal(
+        req.user!.id,
+        input,
+      ),
     });
   }),
 );

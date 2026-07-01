@@ -40,9 +40,11 @@ function apiUserToAuthUser(apiUser: ApiUser): AuthUser {
   const scopes: Scope[] =
     apiUser.roleSlug === "super-admin"
       ? ["all"]
-      : apiUser.roleSlug === "teacher"
-        ? ["school", "class"]
-        : ["school"];
+      : apiUser.roleSlug === "ngo-admin"
+        ? ["ngo"]
+        : apiUser.roleSlug === "teacher"
+          ? ["school", "class"]
+          : ["school"];
 
   return {
     id: apiUser.id,

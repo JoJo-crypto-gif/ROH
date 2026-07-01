@@ -296,17 +296,6 @@ export interface ApiDashboard {
         receiptNumber: string | null;
       }[];
     };
-    accounting?: {
-      available: boolean;
-      reason: string | null;
-      cashPosition: number;
-      receivables: number;
-      payables: number;
-      income: number;
-      expenses: number;
-      surplus: number;
-      unreconciled: number;
-    };
   };
 }
 
@@ -806,7 +795,7 @@ export interface ApiStudent {
   status: string;
   enrolledAt: string;
   avatarUrl: string | null;
-  
+
   // Primary Guardian
   guardianName: string;
   guardianPhone: string;
@@ -818,18 +807,18 @@ export interface ApiStudent {
     relation: string;
     email: string | null;
   };
-  
+
   // Secondary Guardian
   guardian2Name: string | null;
   guardian2Phone: string | null;
   guardian2Relation: string | null;
   guardian2Email: string | null;
-  
+
   // Emergency Contact
   emergencyName: string | null;
   emergencyPhone: string | null;
   emergencyRelation: string | null;
-  
+
   // Health & Demographics
   bloodGroup: string | null;
   allergies: string | null;
@@ -1023,31 +1012,31 @@ export const studentsApi = {
     dob: string;
     avatarUrl?: string | null;
     avatarBase64?: string;
-    
+
     // Primary Guardian
     guardianName: string;
     guardianPhone: string;
     guardianRelation: string;
     guardianEmail?: string | null;
-    
+
     // Secondary Guardian
     guardian2Name?: string | null;
     guardian2Phone?: string | null;
     guardian2Relation?: string | null;
     guardian2Email?: string | null;
-    
+
     // Emergency Contact
     emergencyName?: string | null;
     emergencyPhone?: string | null;
     emergencyRelation?: string | null;
-    
+
     // Health & Demographics
     bloodGroup?: string | null;
     allergies?: string | null;
     medicalNotes?: string | null;
     boardingStatus?: string;
     previousSchool?: string | null;
-    
+
     address: string;
     classId: string;
     feeEffectiveTermId?: string;
@@ -1062,24 +1051,24 @@ export const studentsApi = {
       status?: string;
       avatarUrl?: string | null;
       avatarBase64?: string;
-      
+
       // Primary Guardian
       guardianName?: string;
       guardianPhone?: string;
       guardianRelation?: string;
       guardianEmail?: string | null;
-      
+
       // Secondary Guardian
       guardian2Name?: string | null;
       guardian2Phone?: string | null;
       guardian2Relation?: string | null;
       guardian2Email?: string | null;
-      
+
       // Emergency Contact
       emergencyName?: string | null;
       emergencyPhone?: string | null;
       emergencyRelation?: string | null;
-      
+
       // Health & Demographics
       bloodGroup?: string | null;
       allergies?: string | null;
@@ -1207,6 +1196,230 @@ export interface ApiPagination {
   total: number;
   totalPages: number;
 }
+
+export interface ApiCareCentre {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  openedAt: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string;
+  town: string;
+  district: string;
+  region: string;
+  latitude: number | null;
+  longitude: number | null;
+  capacity: number;
+  currentOccupancy: number;
+  manager: ApiCentreManager | null;
+  status: "ACTIVE" | "INACTIVE";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiCentreManager {
+  id: string;
+  name: string;
+  email: string;
+  active?: boolean;
+  roleName: string;
+  roleSlug: string;
+}
+
+export interface CareCentreInput {
+  code: string;
+  name: string;
+  managerId: string;
+  description?: string | null;
+  openedAt?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address: string;
+  town: string;
+  district: string;
+  region: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  capacity: number;
+  status?: ApiCareCentre["status"];
+}
+
+export interface ApiBeneficiaryGuardian {
+  id?: string;
+  name: string;
+  primaryPhone: string;
+  secondaryPhone: string | null;
+  relationship: string;
+  sequence?: number;
+}
+
+export interface ApiBeneficiary {
+  id: string;
+  beneficiaryNo: string;
+  fullName: string;
+  dateOfBirth: string;
+  gender: "MALE" | "FEMALE";
+  admissionDate: string;
+  referralSource: string;
+  backgroundSummary: string | null;
+  status: "ACTIVE" | "EXITED" | "TRANSFERRED";
+  educationLevelAtAdmission: string | null;
+  currentEducationLevel: string | null;
+  schoolName: string | null;
+  studentId: string | null;
+  healthStatus: string;
+  healthNotes: string | null;
+  specialNeeds: string | null;
+  exitDate: string | null;
+  exitReason: string | null;
+  additionalNotes: string | null;
+  remarks: string | null;
+  avatarUrl: string | null;
+  guardians: ApiBeneficiaryGuardian[];
+  currentPlacement: {
+    id: string;
+    startDate: string;
+    careCentre: { id: string; code: string; name: string; status: string };
+  } | null;
+  placementHistory: {
+    id: string;
+    startDate: string;
+    endDate: string | null;
+    endReason: string | null;
+    active: boolean;
+    careCentre: { id: string; code: string; name: string; status: string };
+  }[];
+  linkedStudent: {
+    id: string;
+    admissionNo: string;
+    fullName: string;
+    status: string;
+    currentClass: {
+      academicYear: string;
+      gradeLevel: string;
+      section: string;
+    } | null;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BeneficiaryInput {
+  beneficiaryNo: string;
+  fullName: string;
+  dateOfBirth: string;
+  gender: ApiBeneficiary["gender"];
+  admissionDate: string;
+  careCentreId: string;
+  referralSource: string;
+  backgroundSummary?: string | null;
+  status?: ApiBeneficiary["status"];
+  educationLevelAtAdmission?: string | null;
+  currentEducationLevel?: string | null;
+  schoolName?: string | null;
+  studentId?: string | null;
+  healthStatus: string;
+  healthNotes?: string | null;
+  specialNeeds?: string | null;
+  exitDate?: string | null;
+  exitReason?: string | null;
+  additionalNotes?: string | null;
+  remarks?: string | null;
+  avatarUrl?: string | null;
+  avatarBase64?: string;
+  guardians: Omit<ApiBeneficiaryGuardian, "id" | "sequence">[];
+}
+
+export interface ApiBeneficiaryOptions {
+  centres: {
+    id: string;
+    code: string;
+    name: string;
+    capacity: number;
+    currentOccupancy: number;
+  }[];
+  students: {
+    id: string;
+    admissionNo: string;
+    fullName: string;
+    dateOfBirth: string;
+    gender: string;
+    currentEducationLevel: string | null;
+    currentClass: string | null;
+    schoolName: string;
+    linkedBeneficiaryId: string | null;
+  }[];
+}
+
+export const ngoApi = {
+  getOverview: () =>
+    request<{
+      overview: {
+        activeCentres: number;
+        inactiveCentres: number;
+        totalCapacity: number;
+        currentOccupancy: number;
+        activeBeneficiaries: number;
+      };
+    }>("/ngo/overview"),
+  getCentreManagers: () => request<{ managers: ApiCentreManager[] }>("/ngo/centre-managers"),
+  getBeneficiaryOptions: () => request<ApiBeneficiaryOptions>("/ngo/beneficiary-options"),
+  getBeneficiaries: (filters?: {
+    search?: string;
+    status?: ApiBeneficiary["status"];
+    careCentreId?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams();
+    Object.entries(filters ?? {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    });
+    return request<{ beneficiaries: ApiBeneficiary[]; pagination: ApiPagination }>(
+      `/ngo/beneficiaries${query.size ? `?${query}` : ""}`,
+    );
+  },
+  getBeneficiary: (id: string) =>
+    request<{ beneficiary: ApiBeneficiary }>(`/ngo/beneficiaries/${id}`),
+  createBeneficiary: (data: BeneficiaryInput) =>
+    request<{ beneficiary: ApiBeneficiary }>("/ngo/beneficiaries", {
+      method: "POST",
+      body: data,
+    }),
+  updateBeneficiary: (id: string, data: Partial<BeneficiaryInput>) =>
+    request<{ beneficiary: ApiBeneficiary }>(`/ngo/beneficiaries/${id}`, {
+      method: "PATCH",
+      body: data,
+    }),
+  getCentres: (filters?: {
+    search?: string;
+    status?: ApiCareCentre["status"];
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams();
+    Object.entries(filters ?? {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    });
+    return request<{ centres: ApiCareCentre[]; pagination: ApiPagination }>(
+      `/ngo/centres${query.size ? `?${query}` : ""}`,
+    );
+  },
+  getCentre: (id: string) => request<{ centre: ApiCareCentre }>(`/ngo/centres/${id}`),
+  createCentre: (data: CareCentreInput) =>
+    request<{ centre: ApiCareCentre }>("/ngo/centres", { method: "POST", body: data }),
+  updateCentre: (id: string, data: Partial<CareCentreInput>) =>
+    request<{ centre: ApiCareCentre }>(`/ngo/centres/${id}`, {
+      method: "PATCH",
+      body: data,
+    }),
+  deactivateCentre: (id: string) =>
+    request<{ centre: ApiCareCentre }>(`/ngo/centres/${id}/deactivate`, {
+      method: "POST",
+    }),
+};
 export interface ApiFeeReceiptDetail {
   id: string;
   number: string;

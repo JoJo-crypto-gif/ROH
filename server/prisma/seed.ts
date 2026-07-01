@@ -36,6 +36,19 @@ const roleDefinitions = [
     ),
   },
   {
+    name: "NGO Admin",
+    slug: "ngo-admin",
+    description: "Manages NGO care centres and operations.",
+    permissions: [
+      "dashboard.view",
+      "ngo.view",
+      "ngo.centres.view",
+      "ngo.centres.manage",
+      "ngo.beneficiaries.view",
+      "ngo.beneficiaries.manage",
+    ],
+  },
+  {
     name: "Headteacher",
     slug: "principal",
     description: "Academic leadership and oversight.",
@@ -120,6 +133,11 @@ const roleDefinitions = [
 ] as const;
 
 async function clearDatabase() {
+  await prisma.ngoAuditLog.deleteMany();
+  await prisma.beneficiaryGuardian.deleteMany();
+  await prisma.beneficiaryPlacement.deleteMany();
+  await prisma.beneficiary.deleteMany();
+  await prisma.careCentre.deleteMany();
   await prisma.financeAuditLog.deleteMany();
   await prisma.paymentReversal.deleteMany();
   await prisma.feeReceipt.deleteMany();

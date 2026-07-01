@@ -51,6 +51,10 @@ export const ALL_PERMISSIONS = [
   "roles.manage",
   "users.manage",
   "ngo.view",
+  "ngo.centres.view",
+  "ngo.centres.manage",
+  "ngo.beneficiaries.view",
+  "ngo.beneficiaries.manage",
   "inventory.view",
 ] as const;
 

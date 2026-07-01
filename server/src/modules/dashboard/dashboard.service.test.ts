@@ -71,3 +71,17 @@ test("finance write permissions create real finance workflow actions", () => {
     ["manage-fees", "record-payment"],
   );
 });
+
+test("paused accounting permissions do not create dashboard actions", () => {
+  const actions = buildDashboardActions(
+    ["accounting.view", "expenses.create", "journals.create"],
+    {
+      hasSections: false,
+      attendanceAvailable: false,
+      gradebookAvailable: false,
+      reportsAvailable: false,
+      promotionsAvailable: false,
+    },
+  );
+  assert.deepEqual(actions, []);
+});

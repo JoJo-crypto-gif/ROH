@@ -7,6 +7,7 @@
     "build": "tsc",
     "test": "node --test --import tsx \"src/**/*.test.ts\"",
     "test:finance:integration": "node scripts/run-finance-integration.mjs",
+    "test:ngo:integration": "node scripts/run-ngo-integration.mjs",
     "start": "node dist/index.js",
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",

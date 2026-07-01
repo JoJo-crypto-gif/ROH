@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Check, Download, Landmark, Paperclip, Plus } from "lucide-react";
+import { Check, CirclePause, Download, Landmark, Paperclip, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Forbidden } from "@/components/layout/Forbidden";
@@ -19,9 +19,11 @@ import {
 import { hasPermission } from "@/lib/rbac";
 
 export const Route = createFileRoute("/_app/accounting")({
-  head: () => ({ meta: [{ title: "Accounting — Lumen Suite" }] }),
+  head: () => ({ meta: [{ title: "School Accounting — Lumen Suite" }] }),
   component: AccountingPage,
 });
+
+const schoolAccountingEnabled = import.meta.env.VITE_SCHOOL_ACCOUNTING_ENABLED === "true";
 
 const field =
   "h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring";
@@ -48,6 +50,29 @@ function fileBase64(file: File) {
 }
 
 function AccountingPage() {
+  if (schoolAccountingEnabled) return <ActiveAccountingPage />;
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="School Accounting"
+        description="Reserved for the school’s future accounting workflow."
+      />
+      <div className="rounded-xl border border-dashed bg-card p-10 text-center">
+        <CirclePause className="mx-auto h-10 w-10 text-brand" />
+        <h2 className="mt-4 text-lg font-semibold">School Accounting is paused</h2>
+        <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
+          We are waiting for the employer’s confirmed accounting requirements before continuing.
+          School fees, payments, receipts and arrears remain available and are not affected.
+        </p>
+        <p className="mt-4 text-xs text-muted-foreground">
+          The existing accounting work and data have been preserved for later review.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ActiveAccountingPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const canSetup = hasPermission(user, "accounting.setup");

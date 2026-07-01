@@ -16,6 +16,7 @@ import { calendarRouter } from "./modules/calendar/calendar.router.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.router.js";
 import { financeRouter } from "./modules/finance/finance.router.js";
 import { accountingRouter } from "./modules/accounting/accounting.router.js";
+import { ngoRouter } from "./modules/ngo/ngo.router.js";
 
 function corsOrigin(
   origin: string | undefined,
@@ -35,7 +36,7 @@ function corsOrigin(
 export function createApp() {
   const app = express();
   app.use(cors({ origin: corsOrigin, credentials: true }));
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "4mb" }));
   app.use(cookieParser());
   const logStream = { write: (message: string) => logger.info(message.trim()) };
   app.use(
@@ -58,6 +59,7 @@ export function createApp() {
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+  app.use("/storage/beneficiaries", express.static(config.ngo.storageDir));
   app.use("/storage", express.static("./storage"));
   app.use("/auth", authRouter);
   app.use("/users", usersRouter);
@@ -69,6 +71,7 @@ export function createApp() {
   app.use("/dashboard", dashboardRouter);
   app.use("/finance", financeRouter);
   app.use("/accounting", accountingRouter);
+  app.use("/ngo", ngoRouter);
   app.use(
     (
       err: Error,
